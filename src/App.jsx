@@ -580,11 +580,14 @@ export default function TaskDashboard() {
     });
   };
 
-  const handleSaveEditTask = (taskId) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, ...editTaskForm, assignee: editTaskForm.assignee ? parseInt(editTaskForm.assignee) : null } : t));
-    setEditingTaskId(null);
-    alert('Cập nhật task thành công!');
-  };
+  const handleDeleteTask = (taskId) => {
+  console.log("🗑️ Deleting task:", taskId);
+  if (window.confirm('Bạn chắc chắn muốn xóa task này?')) {
+    const updatedTasks = tasks.filter(t => t.id !== taskId);
+    setTasks(updatedTasks);
+    console.log("✅ Task deleted successfully");
+  }
+};
 
   const handleUpdateTask = (id, updates) => {
     setTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t));

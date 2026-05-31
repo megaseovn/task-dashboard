@@ -37,7 +37,7 @@ export default function TaskDashboard() {
   const [showAllEmployees, setShowAllEmployees] = useState(false);
 
   const [employees, setEmployees] = useState(() => loadFromLocalStorage('employees', [
-    { id: 0, name: 'Manager', email: 'hoangducthien.3112@gmail.com', password: 'Thiencuc5715', role: 'manager', position: 'Quản lý', status: 'Nhân viên chính thức' },
+    { id: 0, name: 'Manager', email: 'manager@gmail.com', password: '123456', role: 'manager', position: 'Quản lý', status: 'Nhân viên chính thức' },
     { id: 1, name: 'Nguyễn Văn A', email: 'nguyena@gmail.com', password: '123456', role: 'employee', position: 'SEO Leader', status: 'Nhân viên chính thức' },
     { id: 2, name: 'Trần Thị B', email: 'tranb@gmail.com', password: '123456', role: 'employee', position: 'Content', status: 'Nhân viên chính thức' },
   ]));

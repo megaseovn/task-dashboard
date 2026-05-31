@@ -1,25 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Send, Bell, LogOut, X, ExternalLink, AlertTriangle, CheckCircle, Calendar, TrendingUp } from 'lucide-react';
-import {
-  loadEmployeesFromFirebase,
-  loadTasksFromFirebase,
-  loadAttendancesFromFirebase,
-  loadTaskTypesFromFirebase,
-  loadProjectsFromFirebase,
-  loadWorkStatusFromFirebase,
-  loadCurrentUserFromFirebase,
-  saveEmployeesToFirebase,
-  saveTasksToFirebase,
-  saveAttendancesToFirebase,
-  saveTaskTypesToFirebase,
-  saveProjectsToFirebase,
-  saveWorkStatusToFirebase,
-  saveCurrentUserToFirebase,
-  listenToEmployeesChanges,
-  listenToTasksChanges,
-  listenToAttendancesChanges,
-  listenToCurrentUserChanges,
-} from './firebase-service';
 
 export default function TaskDashboard() {
   // ==================== LOCALSTORAGE HELPERS ====================
@@ -68,20 +48,11 @@ export default function TaskDashboard() {
   const [toast, setToast] = useState(null);
   const [showAllEmployees, setShowAllEmployees] = useState(false);
 
-  const [employees, setEmployeesState] = useState(() => {
-    const saved = localStorage.getItem('employees');
-    return saved ? JSON.parse(saved) : [
-      { id: 0, name: 'Manager', email: 'hoangducthien.3112@gmail.com', password: 'Thiencuc5715', role: 'manager', position: 'Quản lý', status: 'Nhân viên chính thức' },
-      { id: 1, name: 'Nguyễn Văn A', email: 'nguyena@gmail.com', password: '123456', role: 'employee', position: 'SEO Leader', status: 'Nhân viên chính thức' },
-      { id: 2, name: 'Trần Thị B', email: 'tranb@gmail.com', password: '123456', role: 'employee', position: 'Content', status: 'Nhân viên chính thức' },
-    ];
-  });
-
-  const setEmployees = (data) => {
-    setEmployeesState(data);
-    localStorage.setItem('employees', JSON.stringify(data));
-    saveEmployeesToFirebase(data);
-  };
+  const [employees, setEmployees] = useState(() => loadFromLocalStorage('employees', [
+    { id: 0, name: 'Manager', email: 'hoangducthien.3112@gmail.com', password: 'Thiencuc5715', role: 'manager', position: 'Quản lý', status: 'Nhân viên chính thức' },
+    { id: 1, name: 'Nguyễn Văn A', email: 'nguyena@gmail.com', password: '123456', role: 'employee', position: 'SEO Leader', status: 'Nhân viên chính thức' },
+    { id: 2, name: 'Trần Thị B', email: 'tranb@gmail.com', password: '123456', role: 'employee', position: 'Content', status: 'Nhân viên chính thức' },
+  ]));
 
   const employeeStatusOptions = ['Thử việc', 'Thực tập sinh', 'Nhân viên chính thức', 'CTV', 'Đã nghỉ việc'];
   const positionOptions = ['Marketing', 'Content', 'Sale', 'SEO Leader'];
@@ -93,56 +64,11 @@ export default function TaskDashboard() {
     'Đang review': 'bg-amber-100 text-amber-700',
   };
 
-  const [taskTypes, setTaskTypesState] = useState(() => {
-    const saved = localStorage.getItem('taskTypes');
-    return saved ? JSON.parse(saved) : ['Lập trình', 'Thiết kế', 'Testing', 'Documentation'];
-  });
-
-  const setTaskTypes = (data) => {
-    setTaskTypesState(data);
-    localStorage.setItem('taskTypes', JSON.stringify(data));
-    saveTaskTypesToFirebase(data);
-  };
-  const [projects, setProjectsState] = useState(() => {
-    const saved = localStorage.getItem('projects');
-    return saved ? JSON.parse(saved) : ['Website Redesign', 'Mobile App', 'API Integration'];
-  });
-
-  const setProjects = (data) => {
-    setProjectsState(data);
-    localStorage.setItem('projects', JSON.stringify(data));
-    saveProjectsToFirebase(data);
-  };
-  const [workStatus, setWorkStatusState] = useState(() => {
-    const saved = localStorage.getItem('workStatus');
-    return saved ? JSON.parse(saved) : ['Cần làm', 'Đang làm', 'Hoàn thành', 'Đang review'];
-  });
-
-  const setWorkStatus = (data) => {
-    setWorkStatusState(data);
-    localStorage.setItem('workStatus', JSON.stringify(data));
-    saveWorkStatusToFirebase(data);
-  };
-  const [tasks, setTasksState] = useState(() => {
-    const saved = localStorage.getItem('tasks');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const setTasks = (data) => {
-    setTasksState(data);
-    localStorage.setItem('tasks', JSON.stringify(data));
-    saveTasksToFirebase(data);
-  };
-  const [attendances, setAttendancesState] = useState(() => {
-    const saved = localStorage.getItem('attendances');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const setAttendances = (data) => {
-    setAttendancesState(data);
-    localStorage.setItem('attendances', JSON.stringify(data));
-    saveAttendancesToFirebase(data);
-  };
+  const [taskTypes, setTaskTypes] = useState(() => loadFromLocalStorage('taskTypes', ['Lập trình', 'Thiết kế', 'Testing', 'Documentation']));
+  const [projects, setProjects] = useState(() => loadFromLocalStorage('projects', ['Website Redesign', 'Mobile App', 'API Integration']));
+  const [workStatus, setWorkStatus] = useState(() => loadFromLocalStorage('workStatus', ['Cần làm', 'Đang làm', 'Hoàn thành', 'Đang review']));
+  const [tasks, setTasks] = useState(() => loadFromLocalStorage('tasks', []));
+  const [attendances, setAttendances] = useState(() => loadFromLocalStorage('attendances', []));
 
   const [newTaskForm, setNewTaskForm] = useState({
     title: '',
@@ -203,6 +129,30 @@ export default function TaskDashboard() {
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [attendanceAction, setAttendanceAction] = useState(null);
 
+  // ==================== SAVE TO LOCALSTORAGE ====================
+  useEffect(() => {
+    saveToLocalStorage('taskTypes', taskTypes);
+  }, [taskTypes]);
+
+  useEffect(() => {
+    saveToLocalStorage('projects', projects);
+  }, [projects]);
+
+  useEffect(() => {
+    saveToLocalStorage('workStatus', workStatus);
+  }, [workStatus]);
+
+  useEffect(() => {
+    saveToLocalStorage('tasks', tasks);
+  }, [tasks]);
+
+  useEffect(() => {
+    saveToLocalStorage('attendances', attendances);
+  }, [attendances]);
+
+  useEffect(() => {
+    saveToLocalStorage('employees', employees);
+  }, [employees]);
 
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -228,41 +178,6 @@ export default function TaskDashboard() {
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-
-  // ==================== FIREBASE REAL-TIME LISTENERS ====================
-  useEffect(() => {
-    const unsubscribeEmployees = listenToEmployeesChanges((remoteEmployees) => {
-      setEmployeesState(remoteEmployees);
-      localStorage.setItem('employees', JSON.stringify(remoteEmployees));
-    });
-    return () => unsubscribeEmployees();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeTasks = listenToTasksChanges((remoteTasks) => {
-      setTasksState(remoteTasks);
-      localStorage.setItem('tasks', JSON.stringify(remoteTasks));
-    });
-    return () => unsubscribeTasks();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeAttendances = listenToAttendancesChanges((remoteAttendances) => {
-      setAttendancesState(remoteAttendances);
-      localStorage.setItem('attendances', JSON.stringify(remoteAttendances));
-    });
-    return () => unsubscribeAttendances();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeCurrentUser = listenToCurrentUserChanges((remoteUser) => {
-      if (remoteUser) {
-        setCurrentUserState(remoteUser);
-        localStorage.setItem('currentUser', JSON.stringify(remoteUser));
-      }
-    });
-    return () => unsubscribeCurrentUser();
-  }, []);
   // ==================== UTILS ====================
   const today = new Date().toISOString().split('T')[0];
   

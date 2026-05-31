@@ -92,8 +92,6 @@ export default function TaskDashboard() {
 
   const [editEmployeeForm, setEditEmployeeForm] = useState({
     name: '',
-    email: '',
-    password: '',
     position: '',
     status: '',
   });
@@ -313,8 +311,6 @@ export default function TaskDashboard() {
     setEditingEmployeeId(emp.id);
     setEditEmployeeForm({
       name: emp.name,
-      email: emp.email,
-      password: emp.password,
       position: emp.position,
       status: emp.status,
     });
@@ -989,14 +985,7 @@ export default function TaskDashboard() {
                               <p className={`text-xs font-semibold ${e.status === 'Đã nghỉ việc' ? 'text-red-700' : 'text-emerald-700'}`}>{e.status}</p>
                             </div>
                           </div>
-                          <div className="flex gap-1 ml-2">
-                            <button onClick={() => handleOpenEditEmployee(e)} className="text-blue-600 hover:text-blue-700">✏️</button>
-                            <button onClick={() => {
-                              if (window.confirm(`Bạn chắc chắn muốn xóa ${e.name}?`)) {
-                                setEmployees(employees.filter(emp => emp.id !== e.id));
-                              }
-                            }} className="text-red-600 hover:text-red-700">🗑️</button>
-                          </div>
+                          <button onClick={() => handleOpenEditEmployee(e)} className="text-blue-600 hover:text-blue-700 ml-2">✏️</button>
                         </div>
                       ))}
                     </div>
@@ -1373,9 +1362,7 @@ export default function TaskDashboard() {
               <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
                 <h3 className="text-lg font-bold text-gray-900 mb-4">✏️ Sửa Nhân viên</h3>
                 <div className="space-y-3 mb-4">
-                  <input type="text" placeholder="Tên" value={editEmployeeForm.name} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  <input type="email" placeholder="Email" value={editEmployeeForm.email} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, email: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  <input type="password" placeholder="Mật khẩu" value={editEmployeeForm.password} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, password: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  <input type="text" value={editEmployeeForm.name} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   <select value={editEmployeeForm.position} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, position: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                     {positionOptions.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>

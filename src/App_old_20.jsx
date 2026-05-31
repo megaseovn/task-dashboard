@@ -325,9 +325,7 @@ export default function TaskDashboard() {
   };
 
   const handleSaveEditEmployee = (empId) => {
-    const updatedEmployees = employees.map(e => e.id === empId ? { ...e, ...editEmployeeForm } : e);
-    setEmployees(updatedEmployees);
-    localStorage.setItem('employees', JSON.stringify(updatedEmployees));
+    setEmployees(employees.map(e => e.id === empId ? { ...e, ...editEmployeeForm } : e));
     setEditingEmployeeId(null);
     alert('Cập nhật nhân viên thành công!');
   };
@@ -999,9 +997,7 @@ export default function TaskDashboard() {
                             <button onClick={() => handleOpenEditEmployee(e)} className="text-blue-600 hover:text-blue-700">✏️</button>
                             <button onClick={() => {
                               if (window.confirm(`Bạn chắc chắn muốn xóa ${e.name}?`)) {
-                                const updatedEmployees = employees.filter(emp => emp.id !== e.id);
-                                setEmployees(updatedEmployees);
-                                localStorage.setItem('employees', JSON.stringify(updatedEmployees));
+                                setEmployees(employees.filter(emp => emp.id !== e.id));
                               }
                             }} className="text-red-600 hover:text-red-700">🗑️</button>
                           </div>

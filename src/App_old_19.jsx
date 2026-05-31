@@ -150,10 +150,6 @@ export default function TaskDashboard() {
     saveToLocalStorage('attendances', attendances);
   }, [attendances]);
 
-  useEffect(() => {
-    saveToLocalStorage('employees', employees);
-  }, [employees]);
-
   // ==================== UTILS ====================
   const today = new Date().toISOString().split('T')[0];
   

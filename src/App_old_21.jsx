@@ -154,30 +154,6 @@ export default function TaskDashboard() {
     saveToLocalStorage('employees', employees);
   }, [employees]);
 
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'employees') {
-        const updatedEmployees = JSON.parse(e.newValue);
-        setEmployees(updatedEmployees);
-      }
-      if (e.key === 'currentUser') {
-        const updatedUser = e.newValue ? JSON.parse(e.newValue) : null;
-        setCurrentUser(updatedUser);
-      }
-      if (e.key === 'tasks') {
-        const updatedTasks = JSON.parse(e.newValue);
-        setTasks(updatedTasks);
-      }
-      if (e.key === 'attendances') {
-        const updatedAttendances = JSON.parse(e.newValue);
-        setAttendances(updatedAttendances);
-      }
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
   // ==================== UTILS ====================
   const today = new Date().toISOString().split('T')[0];
   

@@ -22,19 +22,7 @@ export default function TaskDashboard() {
   };
 
   // ==================== STATE ====================
-  const [currentUser, setCurrentUserState] = useState(() => {
-    const saved = localStorage.getItem('currentUser');
-    return saved ? JSON.parse(saved) : null;
-  });
-  
-  const setCurrentUser = (user) => {
-    setCurrentUserState(user);
-    if (user) {
-      localStorage.setItem('currentUser', JSON.stringify(user));
-    } else {
-      localStorage.removeItem('currentUser');
-    }
-  };
+  const [currentUser, setCurrentUser] = useState(null);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [editingTaskId, setEditingTaskId] = useState(null);

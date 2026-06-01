@@ -220,37 +220,3 @@ export const listenToCurrentUserChanges = (callback) => {
   });
   return unsubscribe;
 };
-
-// ==================== LISTEN TO SETUP DATA CHANGES ====================
-export const listenToTaskTypesChanges = (callback) => {
-  const unsubscribe = dbOnValue(dbRef(db, 'taskTypes'), (snapshot) => {
-    if (snapshot.exists()) {
-      callback(snapshot.val());
-    }
-  }, (error) => {
-    console.error('Error listening to taskTypes:', error);
-  });
-  return unsubscribe;
-};
-
-export const listenToProjectsChanges = (callback) => {
-  const unsubscribe = dbOnValue(dbRef(db, 'projects'), (snapshot) => {
-    if (snapshot.exists()) {
-      callback(snapshot.val());
-    }
-  }, (error) => {
-    console.error('Error listening to projects:', error);
-  });
-  return unsubscribe;
-};
-
-export const listenToWorkStatusChanges = (callback) => {
-  const unsubscribe = dbOnValue(dbRef(db, 'workStatus'), (snapshot) => {
-    if (snapshot.exists()) {
-      callback(snapshot.val());
-    }
-  }, (error) => {
-    console.error('Error listening to workStatus:', error);
-  });
-  return unsubscribe;
-};

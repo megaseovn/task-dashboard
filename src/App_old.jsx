@@ -19,9 +19,6 @@ import {
   listenToTasksChanges,
   listenToAttendancesChanges,
   listenToCurrentUserChanges,
-  listenToTaskTypesChanges,
-  listenToProjectsChanges,
-  listenToWorkStatusChanges,
 } from './firebase-service';
 
 export default function TaskDashboard() {
@@ -311,31 +308,6 @@ export default function TaskDashboard() {
       }
     });
     return () => unsubscribeCurrentUser();
-  }, []);
-
-  // ==================== LISTENERS FOR SETUP DATA ====================
-  useEffect(() => {
-    const unsubscribeTaskTypes = listenToTaskTypesChanges((remoteTaskTypes) => {
-      setTaskTypesState(remoteTaskTypes);
-      localStorage.setItem('taskTypes', JSON.stringify(remoteTaskTypes));
-    });
-    return () => unsubscribeTaskTypes();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeProjects = listenToProjectsChanges((remoteProjects) => {
-      setProjectsState(remoteProjects);
-      localStorage.setItem('projects', JSON.stringify(remoteProjects));
-    });
-    return () => unsubscribeProjects();
-  }, []);
-
-  useEffect(() => {
-    const unsubscribeWorkStatus = listenToWorkStatusChanges((remoteWorkStatus) => {
-      setWorkStatusState(remoteWorkStatus);
-      localStorage.setItem('workStatus', JSON.stringify(remoteWorkStatus));
-    });
-    return () => unsubscribeWorkStatus();
   }, []);
   // ==================== UTILS ====================
   const today = new Date().toISOString().split('T')[0];

@@ -654,35 +654,6 @@ export default function TaskDashboard() {
     });
   };
 
-  const handleSaveEditTask = (taskId) => {
-    if (!editTaskForm.title.trim()) {
-      alert('Tiêu đề task không được để trống!');
-      return;
-    }
-    
-    const updatedTasks = tasks.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          title: editTaskForm.title,
-          type: editTaskForm.type,
-          project: editTaskForm.project,
-          status: editTaskForm.status,
-          deadline: editTaskForm.deadline,
-          wordCount: editTaskForm.wordCount,
-          assignee: editTaskForm.assignee || '',
-        };
-      }
-      return t;
-    });
-    
-    setTasks(updatedTasks);
-    setEditingTaskId(null);
-    setToast({ type: 'success', message: '✅ Task cập nhật thành công!' });
-    
-    setTimeout(() => setToast(null), 3000);
-  };
-
   const handleDeleteTask = (taskId) => {
   console.log("🗑️ Deleting task:", taskId);
   if (window.confirm('Bạn chắc chắn muốn xóa task này?')) {

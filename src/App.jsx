@@ -237,6 +237,52 @@ export default function TaskDashboard() {
     });
     return () => unsubscribeEmployees();
   }, []);
+// ==================== LOAD INITIAL DATA FROM FIREBASE ====================
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        // Load taskTypes
+        const savedTaskTypes = localStorage.getItem('taskTypes');
+        if (savedTaskTypes) {
+          setTaskTypesState(JSON.parse(savedTaskTypes));
+        }
+        
+        // Load projects
+        const savedProjects = localStorage.getItem('projects');
+        if (savedProjects) {
+          setProjectsState(JSON.parse(savedProjects));
+        }
+        
+        // Load workStatus
+        const savedWorkStatus = localStorage.getItem('workStatus');
+        if (savedWorkStatus) {
+          setWorkStatusState(JSON.parse(savedWorkStatus));
+        }
+        
+        // Load employees
+        const savedEmployees = localStorage.getItem('employees');
+        if (savedEmployees) {
+          setEmployeesState(JSON.parse(savedEmployees));
+        }
+        
+        // Load tasks
+        const savedTasks = localStorage.getItem('tasks');
+        if (savedTasks) {
+          setTasksState(JSON.parse(savedTasks));
+        }
+        
+        // Load attendances
+        const savedAttendances = localStorage.getItem('attendances');
+        if (savedAttendances) {
+          setAttendancesState(JSON.parse(savedAttendances));
+        }
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+      }
+    };
+
+    initializeData();
+  }, []); // Only run once on mount
 
   useEffect(() => {
     const unsubscribeTasks = listenToTasksChanges((remoteTasks) => {

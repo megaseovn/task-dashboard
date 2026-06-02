@@ -194,7 +194,6 @@ export default function TaskDashboard() {
   const [filterPosition, setFilterPosition] = useState('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
-  const [showTodayOnly, setShowTodayOnly] = useState(true); // Mặc định chỉ hiển thị task hôm nay
   const [editingTypeItem, setEditingTypeItem] = useState(null);
   const [editingProjectItem, setEditingProjectItem] = useState(null);
   const [editingStatusItem, setEditingStatusItem] = useState(null);
@@ -390,12 +389,6 @@ export default function TaskDashboard() {
 
   const getFilteredTasks = () => {
     let filtered = tasks;
-    
-    // Mặc định chỉ hiển thị task hôm nay
-    if (showTodayOnly) {
-      filtered = filtered.filter(t => t.deadline === today);
-    }
-    
     if (currentUser?.role === 'employee') {
       filtered = filtered.filter(t => t.assignee === currentUser.id || t.createdBy === currentUser.id);
     } else {
@@ -407,8 +400,8 @@ export default function TaskDashboard() {
     }
     if (filterProject !== 'all') filtered = filtered.filter(t => t.project === filterProject);
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
-    if (filterDateFrom && !showTodayOnly) filtered = filtered.filter(t => t.deadline >= filterDateFrom);
-    if (filterDateTo && !showTodayOnly) filtered = filtered.filter(t => t.deadline <= filterDateTo);
+    if (filterDateFrom) filtered = filtered.filter(t => t.deadline >= filterDateFrom);
+    if (filterDateTo) filtered = filtered.filter(t => t.deadline <= filterDateTo);
     return filtered;
   };
 
@@ -1835,19 +1828,13 @@ export default function TaskDashboard() {
 
         {/* Filter */}
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            <button 
-              onClick={() => setShowTodayOnly(!showTodayOnly)}
-              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${showTodayOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-            >
-              📅 Hôm nay
-            </button>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
               <option value="all">Dự án: Tất cả</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} disabled={showTodayOnly} className={`px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${showTodayOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
-            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} disabled={showTodayOnly} className={`px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${showTodayOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
+            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
 

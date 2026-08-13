@@ -194,7 +194,15 @@ export default function TaskDashboard() {
   const [filterPosition, setFilterPosition] = useState('all');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
-  const [showTodayOnly, setShowTodayOnly] = useState(true); // Mặc định chỉ hiển thị task hôm nay
+
+  // ✅ Set default filter to today on first load
+  useEffect(() => {
+    if (filterDateFrom === '' && filterDateTo === '') {
+      const today = new Date().toISOString().split('T')[0];
+      setFilterDateFrom(today);
+      setFilterDateTo(today);
+    }
+  }, []); // ✅ Empty array - only run once on mount
   const [editingTypeItem, setEditingTypeItem] = useState(null);
   const [editingProjectItem, setEditingProjectItem] = useState(null);
   const [editingStatusItem, setEditingStatusItem] = useState(null);
@@ -391,11 +399,6 @@ export default function TaskDashboard() {
   const getFilteredTasks = () => {
     let filtered = tasks;
     
-    // Mặc định chỉ hiển thị task hôm nay
-    if (showTodayOnly) {
-      filtered = filtered.filter(t => t.deadline === today);
-    }
-    
     if (currentUser?.role === 'employee') {
       filtered = filtered.filter(t => t.assignee === currentUser.id || t.createdBy === currentUser.id);
     } else {
@@ -407,8 +410,9 @@ export default function TaskDashboard() {
     }
     if (filterProject !== 'all') filtered = filtered.filter(t => t.project === filterProject);
     if (filterStatus !== 'all') filtered = filtered.filter(t => t.status === filterStatus);
-    if (filterDateFrom && !showTodayOnly) filtered = filtered.filter(t => t.deadline >= filterDateFrom);
-    if (filterDateTo && !showTodayOnly) filtered = filtered.filter(t => t.deadline <= filterDateTo);
+    // ✅ Luôn dùng filterDateFrom/filterDateTo
+    if (filterDateFrom) filtered = filtered.filter(t => t.deadline >= filterDateFrom);
+    if (filterDateTo) filtered = filtered.filter(t => t.deadline <= filterDateTo);
     return filtered;
   };
 
@@ -1244,9 +1248,18 @@ export default function TaskDashboard() {
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="all">Nhân viên: Tất cả</option>
-                    {employees.filter(e => e.role === 'employee').map(e => (
-                      <option key={e.id} value={e.id}>{e.name}</option>
-                    ))}
+                    {employees
+                      .filter(e => e.role === 'employee')
+                      .sort((a, b) => {
+                        const aQuit = a.status === 'Đã nghỉ việc' ? 1 : 0;
+                        const bQuit = b.status === 'Đã nghỉ việc' ? 1 : 0;
+                        return aQuit - bQuit;
+                      })
+                      .map(e => (
+                        <option key={e.id} value={e.id}>
+                          {e.status === 'Đã nghỉ việc' ? `❌ ${e.name}` : e.name}
+                        </option>
+                      ))}
                   </select>
                   <select
                     value={filterPosition}
@@ -1837,8 +1850,15 @@ export default function TaskDashboard() {
         <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <button 
-              onClick={() => setShowTodayOnly(!showTodayOnly)}
-              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${showTodayOnly ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              onClick={() => {
+                const today = new Date().toISOString().split('T')[0];
+                setFilterDateFrom(today);
+                setFilterDateTo(today);
+              }}
+              className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${(() => {
+                const today = new Date().toISOString().split('T')[0];
+                return filterDateFrom === today && filterDateTo === today ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300';
+              })()}`}
             >
               📅 Hôm nay
             </button>
@@ -1846,8 +1866,8 @@ export default function TaskDashboard() {
               <option value="all">Dự án: Tất cả</option>
               {projects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} disabled={showTodayOnly} className={`px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${showTodayOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
-            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} disabled={showTodayOnly} className={`px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 ${showTodayOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
+            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
 

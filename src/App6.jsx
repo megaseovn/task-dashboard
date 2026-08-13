@@ -70,7 +70,6 @@ export default function TaskDashboard() {
   const [editAttendanceType, setEditAttendanceType] = useState('');
   const [toast, setToast] = useState(null);
   const [showAllEmployees, setShowAllEmployees] = useState(false);
-  const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
 
   const [employees, setEmployeesState] = useState(() => {
     const saved = localStorage.getItem('employees');
@@ -1250,7 +1249,7 @@ export default function TaskDashboard() {
                   >
                     <option value="all">Nhân viên: Tất cả</option>
                     {employees
-                      .filter(e => e.role === 'employee' && (showAllFilterEmployees || e.status !== 'Đã nghỉ việc'))
+                      .filter(e => e.role === 'employee')
                       .sort((a, b) => {
                         const aQuit = a.status === 'Đã nghỉ việc' ? 1 : 0;
                         const bQuit = b.status === 'Đã nghỉ việc' ? 1 : 0;
@@ -1262,15 +1261,6 @@ export default function TaskDashboard() {
                         </option>
                       ))}
                   </select>
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={showAllFilterEmployees}
-                      onChange={(e) => setShowAllFilterEmployees(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-gray-600">Cả đã nghỉ</span>
-                  </label>
                   <select
                     value={filterPosition}
                     onChange={(e) => setFilterPosition(e.target.value)}
@@ -1433,39 +1423,10 @@ export default function TaskDashboard() {
 
               {/* Attendance Report */}
               <div className="space-y-6">
-                {(() => {
-                  // Chưa lọc gì (chưa chọn nhân viên cụ thể, chưa chọn ngày) → không hiển thị ai
-                  const hasFilter = selectedAttendanceEmployee !== 'all' || attendanceDateFrom || attendanceDateTo;
-                  if (!hasFilter) {
-                    return (
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-500">
-                        <Calendar className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-                        <p className="font-semibold">Chọn nhân viên hoặc khoảng thời gian để xem thống kê</p>
-                      </div>
-                    );
-                  }
-
-                  let list = selectedAttendanceEmployee === 'all'
-                    ? employees.filter(e => e.role === 'employee')
-                    : employees.filter(e => e.id === parseInt(selectedAttendanceEmployee));
-
-                  // Khi xem tất cả: chỉ hiển thị nhân sự có đi làm (tổng ngày công > 0)
-                  if (selectedAttendanceEmployee === 'all') {
-                    list = list.filter(emp => {
-                      const wd = calculateWorkDays(emp.id, attendanceDateFrom, attendanceDateTo);
-                      return wd.totalWorkDays > 0;
-                    });
-                  }
-
-                  if (list.length === 0) {
-                    return (
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-gray-500">
-                        <p className="font-semibold">Không có nhân sự nào đi làm trong khoảng thời gian này</p>
-                      </div>
-                    );
-                  }
-
-                  return list.map(emp => {
+                {(selectedAttendanceEmployee === 'all' 
+                  ? employees.filter(e => e.role === 'employee')
+                  : employees.filter(e => e.id === parseInt(selectedAttendanceEmployee))
+                ).map(emp => {
                   const workDays = calculateWorkDays(emp.id, attendanceDateFrom, attendanceDateTo);
                   const parkingDays = calculateParkingDays(emp.id, attendanceDateFrom, attendanceDateTo);
                   const taskCoverage = getTaskCoverage(emp.id, attendanceDateFrom, attendanceDateTo);
@@ -1555,12 +1516,11 @@ export default function TaskDashboard() {
                       </div>
                     </div>
                   );
-                  });
-                })()}
+                })}
               </div>
 
               {/* SUMMARY */}
-              {selectedAttendanceEmployee === 'all' && (attendanceDateFrom || attendanceDateTo) && (
+              {selectedAttendanceEmployee === 'all' && (
                 <div className="bg-gradient-to-br from-blue-600 to-emerald-600 rounded-xl shadow-lg p-6 text-white">
                   <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
                     <TrendingUp className="w-6 h-6" />

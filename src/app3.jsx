@@ -71,7 +71,6 @@ export default function TaskDashboard() {
   const [toast, setToast] = useState(null);
   const [showAllEmployees, setShowAllEmployees] = useState(false);
   const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
-  const [expandedAttendance, setExpandedAttendance] = useState({});
 
   const [employees, setEmployeesState] = useState(() => {
     const saved = localStorage.getItem('employees');
@@ -1474,19 +1473,11 @@ export default function TaskDashboard() {
 
                   return (
                     <div key={emp.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                      <div className="bg-gradient-to-r from-blue-600 to-emerald-600 px-6 py-4 text-white flex justify-between items-center">
-                        <div>
-                          <h3 className="text-lg font-bold">{emp.name} - {emp.position}</h3>
-                          <p className="text-sm opacity-90">
-                            {attendanceDateFrom ? attendanceDateFrom : 'Từ đầu'} - {attendanceDateTo ? attendanceDateTo : 'Đến nay'}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => setExpandedAttendance(prev => ({ ...prev, [emp.id]: !prev[emp.id] }))}
-                          className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors"
-                        >
-                          {expandedAttendance[emp.id] ? '▲ Ẩn chi tiết' : '📋 Chi tiết'}
-                        </button>
+                      <div className="bg-gradient-to-r from-blue-600 to-emerald-600 px-6 py-4 text-white">
+                        <h3 className="text-lg font-bold">{emp.name} - {emp.position}</h3>
+                        <p className="text-sm opacity-90">
+                          {attendanceDateFrom ? attendanceDateFrom : 'Từ đầu'} - {attendanceDateTo ? attendanceDateTo : 'Đến nay'}
+                        </p>
                       </div>
 
                       <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1562,50 +1553,6 @@ export default function TaskDashboard() {
                           </div>
                         </div>
                       </div>
-
-                      {expandedAttendance[emp.id] && (() => {
-                        let list = attendances.filter(a => a.userId === emp.id);
-                        if (attendanceDateFrom) list = list.filter(a => a.date >= attendanceDateFrom);
-                        if (attendanceDateTo) list = list.filter(a => a.date <= attendanceDateTo);
-                        list = list.sort((a, b) => a.date < b.date ? -1 : 1);
-
-                        const typeLabel = (t) => (
-                          t === 'full_day' ? '🕐 Cả ngày' :
-                          t === 'half_morning' ? '🌅 Nửa ngày (Sáng)' :
-                          t === 'half_afternoon' ? '🌆 Nửa ngày (Chiều)' :
-                          t === 'ot_half' ? '⚡ OT (0.5)' : t
-                        );
-
-                        return (
-                          <div className="border-t border-gray-100 px-6 py-4 bg-gray-50">
-                            <h4 className="font-bold text-gray-900 mb-3">📋 Chi tiết các buổi đi làm ({list.length} buổi)</h4>
-                            {list.length === 0 ? (
-                              <p className="text-gray-500 text-sm">Không có buổi đi làm nào trong khoảng thời gian này.</p>
-                            ) : (
-                              <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                  <thead>
-                                    <tr className="text-left text-gray-600 border-b border-gray-200">
-                                      <th className="py-2 pr-4">STT</th>
-                                      <th className="py-2 pr-4">Ngày</th>
-                                      <th className="py-2 pr-4">Loại</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {list.map((a, idx) => (
-                                      <tr key={a.date + idx} className="border-b border-gray-100">
-                                        <td className="py-2 pr-4 text-gray-500">{idx + 1}</td>
-                                        <td className="py-2 pr-4 font-medium text-gray-900">{a.date}</td>
-                                        <td className="py-2 pr-4">{typeLabel(a.type)}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
                     </div>
                   );
                   });

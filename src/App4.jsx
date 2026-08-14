@@ -1569,44 +1569,12 @@ export default function TaskDashboard() {
                         if (attendanceDateTo) list = list.filter(a => a.date <= attendanceDateTo);
                         list = list.sort((a, b) => a.date < b.date ? -1 : 1);
 
-                        // Map ngày -> loại buổi
-                        const byDate = {};
-                        list.forEach(a => { byDate[a.date] = a.type; });
-
-                        // Xác định khoảng tháng cần hiển thị
-                        const dates = list.map(a => a.date);
-                        const startStr = attendanceDateFrom || (dates.length ? dates[0] : null);
-                        const endStr = attendanceDateTo || (dates.length ? dates[dates.length - 1] : null);
-
-                        const styleOf = (t) => (
-                          t === 'full_day' ? 'bg-emerald-500 text-white' :
-                          t === 'half_morning' ? 'bg-amber-400 text-white' :
-                          t === 'half_afternoon' ? 'bg-orange-400 text-white' :
-                          t === 'ot_half' ? 'bg-purple-500 text-white' : ''
+                        const typeLabel = (t) => (
+                          t === 'full_day' ? '🕐 Cả ngày' :
+                          t === 'half_morning' ? '🌅 Nửa ngày (Sáng)' :
+                          t === 'half_afternoon' ? '🌆 Nửa ngày (Chiều)' :
+                          t === 'ot_half' ? '⚡ OT (0.5)' : t
                         );
-                        const shortLabel = (t) => (
-                          t === 'full_day' ? 'Cả ngày' :
-                          t === 'half_morning' ? 'Sáng' :
-                          t === 'half_afternoon' ? 'Chiều' :
-                          t === 'ot_half' ? 'OT' : ''
-                        );
-
-                        // Danh sách các tháng từ start đến end
-                        const months = [];
-                        if (startStr && endStr) {
-                          let [sy, sm] = startStr.split('-').map(Number);
-                          let [ey, em] = endStr.split('-').map(Number);
-                          let y = sy, m = sm;
-                          while (y < ey || (y === ey && m <= em)) {
-                            months.push([y, m]);
-                            m++;
-                            if (m > 12) { m = 1; y++; }
-                            if (months.length > 24) break;
-                          }
-                        }
-
-                        const dayNames = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
-                        const pad = (n) => String(n).padStart(2, '0');
 
                         return (
                           <div className="border-t border-gray-100 px-6 py-4 bg-gray-50">
@@ -1614,47 +1582,26 @@ export default function TaskDashboard() {
                             {list.length === 0 ? (
                               <p className="text-gray-500 text-sm">Không có buổi đi làm nào trong khoảng thời gian này.</p>
                             ) : (
-                              <>
-                                {/* Chú thích màu */}
-                                <div className="flex flex-wrap gap-3 mb-4 text-xs">
-                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500 inline-block"></span> Cả ngày</span>
-                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block"></span> Nửa ngày (Sáng)</span>
-                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-400 inline-block"></span> Nửa ngày (Chiều)</span>
-                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block"></span> OT</span>
-                                </div>
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                  {months.map(([y, m]) => {
-                                    const daysInMonth = new Date(y, m, 0).getDate();
-                                    const firstDow = new Date(y, m - 1, 1).getDay(); // 0=CN..6=T7
-                                    const offset = (firstDow + 6) % 7; // T2=0
-                                    const cells = [];
-                                    for (let i = 0; i < offset; i++) cells.push(null);
-                                    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-
-                                    return (
-                                      <div key={`${y}-${m}`} className="bg-white rounded-lg border border-gray-200 p-3">
-                                        <p className="font-bold text-gray-800 mb-2 text-center">Tháng {m}/{y}</p>
-                                        <div className="grid grid-cols-7 gap-1 text-center">
-                                          {dayNames.map(dn => (
-                                            <div key={dn} className={`font-semibold py-1 text-xs ${dn === 'CN' ? 'text-red-500' : 'text-gray-500'}`}>{dn}</div>
-                                          ))}
-                                          {cells.map((d, i) => {
-                                            if (d === null) return <div key={`e${i}`}></div>;
-                                            const ds = `${y}-${pad(m)}-${pad(d)}`;
-                                            const t = byDate[ds];
-                                            return (
-                                              <div key={ds} className={`aspect-square flex flex-col items-center justify-center rounded ${t ? styleOf(t) : 'bg-gray-50 text-gray-400'}`}>
-                                                <span className="font-semibold leading-none text-sm">{d}</span>
-                                                {t && <span className="leading-none mt-0.5" style={{ fontSize: '9px' }}>{shortLabel(t)}</span>}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="text-left text-gray-600 border-b border-gray-200">
+                                      <th className="py-2 pr-4">STT</th>
+                                      <th className="py-2 pr-4">Ngày</th>
+                                      <th className="py-2 pr-4">Loại</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {list.map((a, idx) => (
+                                      <tr key={a.date + idx} className="border-b border-gray-100">
+                                        <td className="py-2 pr-4 text-gray-500">{idx + 1}</td>
+                                        <td className="py-2 pr-4 font-medium text-gray-900">{a.date}</td>
+                                        <td className="py-2 pr-4">{typeLabel(a.type)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
                             )}
                           </div>
                         );

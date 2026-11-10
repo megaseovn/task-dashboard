@@ -588,7 +588,7 @@ export default function TaskDashboard() {
     const standardDays = pick('standardDays', countStandardDays(month));
     const leaveUsed = pick('leaveUsed', 0);
     const daysOff = pick('daysOff', Math.max(0, standardDays - attended));
-    const actualDays = pick('actualDays', attended + leaveUsed);
+    const actualDays = pick('actualDays', standardDays - daysOff + leaveUsed); // = công tháng − nghỉ + phép
     const baseSalary = pick('baseSalary', getCarriedValue(emp.id, month, 'baseSalary'));
     const dailyRate = standardDays > 0 ? baseSalary / standardDays : 0;
     const otPay = pick('otPay', Math.round(wd.otDays * dailyRate));
@@ -1879,7 +1879,7 @@ export default function TaskDashboard() {
                         {line({ emp: emp, r: r, label: "Tổng số ngày công tháng", field: "standardDays", step: 0.5, hint: "T2–T6: 1 công, T7: 0,5 công", })}
                         {line({ emp: emp, r: r, label: "Số ngày nghỉ", field: "daysOff", step: 0.5, })}
                         {line({ emp: emp, r: r, label: "Ngày phép dùng", field: "leaveUsed", step: 0.5, })}
-                        {line({ emp, r, label: "Ngày công thực tế", field: "actualDays", step: 0.5, hint: `Điểm danh ${fmt(r.attended)} + phép` })}
+                        {line({ emp, r, label: "Ngày công thực tế", field: "actualDays", step: 0.5, hint: `= Công tháng − Nghỉ + Phép (điểm danh: ${fmt(r.attended)})` })}
 
                         {section("Lương (nghìn đồng)")}
                         {line({ emp: emp, r: r, label: "Lương cứng + ăn trưa", field: "baseSalary", })}

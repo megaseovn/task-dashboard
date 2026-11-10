@@ -548,6 +548,7 @@ export default function TaskDashboard() {
       withTasks: attendanceDates.length - missingDates.length,
       missing: missingDates
     };
+  };
 
   // ==================== LƯƠNG (đơn vị: nghìn đồng) ====================
   // Công chuẩn tháng: T2–T6 = 1 công, T7 = 0,5 công, CN = 0
@@ -600,7 +601,7 @@ export default function TaskDashboard() {
       overridden: Object.fromEntries(Object.keys(saved).map(k => [k, has(k)])),
       attended, otDays: wd.otDays, dailyRate, total
     };
-  };
+
   };
 
   // ==================== HANDLERS ====================

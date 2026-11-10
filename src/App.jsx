@@ -126,6 +126,7 @@ export default function TaskDashboard() {
   const [showAllEmployees, setShowAllEmployees] = useState(false);
   const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
   const [expandedAttendance, setExpandedAttendance] = useState({});
+  const [dayPicker, setDayPicker] = useState(null); // { userId, name, date, current }
 
   const [employees, setEmployeesState] = useState(() => {
     const saved = localStorage.getItem('employees');
@@ -499,13 +500,15 @@ export default function TaskDashboard() {
     return dates;
   };
 
-  // Điểm danh thật + ngày có task mà quên điểm danh (tự ghi nhận = Cả ngày, auto: true)
+  // Điểm danh thật + ngày có task mà quên điểm danh (pending: chờ xác nhận, KHÔNG cộng công)
+  // Chỉ xét các ngày trước hôm nay (hôm nay vẫn điểm danh bình thường được)
   const getEffectiveAttendances = (userId, dateFromStr, dateToStr) => {
+    const todayStr = localDate();
     const real = attendances.filter(a => a.userId === userId);
     const realDates = new Set(real.map(a => a.date));
     const auto = [...getTaskDates(userId, true)]
-      .filter(d => !realDates.has(d))
-      .map(d => ({ id: `auto-${userId}-${d}`, userId, date: d, type: 'full_day', auto: true }));
+      .filter(d => !realDates.has(d) && d < todayStr)
+      .map(d => ({ id: `pending-${userId}-${d}`, userId, date: d, type: null, pending: true }));
     let list = [...real, ...auto];
     if (dateFromStr) list = list.filter(a => a.date >= dateFromStr);
     if (dateToStr) list = list.filter(a => a.date <= dateToStr);
@@ -518,10 +521,12 @@ export default function TaskDashboard() {
     let fullDays = 0;
     let halfDays = 0;
     let otDays = 0;
-    let autoDays = 0;
+    let pendingDays = 0;
+    let buDays = 0;
 
     userAttendances.forEach(att => {
-      if (att.auto) autoDays += 1;
+      if (att.pending) { pendingDays += 1; return; } // chờ xác nhận: không cộng
+      if (att.bu) buDays += 1;
       if (att.type === 'full_day') fullDays += 1;
       else if (att.type === 'half_morning' || att.type === 'half_afternoon') halfDays += 1;
       else if (att.type === 'ot_half') otDays += 0.5;
@@ -532,7 +537,8 @@ export default function TaskDashboard() {
       halfDays,
       totalWorkDays: fullDays + (halfDays / 2) + otDays,
       otDays,
-      autoDays
+      pendingDays,
+      buDays
     };
   };
 
@@ -599,7 +605,7 @@ export default function TaskDashboard() {
     return {
       values: { standardDays, daysOff, actualDays, leaveUsed, baseSalary, otPay, bonus, bhxh },
       overridden: Object.fromEntries(Object.keys(saved).map(k => [k, has(k)])),
-      attended, otDays: wd.otDays, dailyRate, total
+      attended, otDays: wd.otDays, pendingDays: wd.pendingDays, dailyRate, total
     };
 
   };
@@ -678,6 +684,28 @@ export default function TaskDashboard() {
       setShowAttendanceModal(true);
     } else {
       handleSaveAttendance(type);
+    }
+  };
+
+  // Ghi điểm danh cho 1 ngày: có rồi thì đổi loại, chưa có thì tạo mới (đánh dấu "bù").
+  // type = null -> xóa điểm danh ngày đó (chỉ manager dùng)
+  const setAttendanceForDay = (userId, date, type) => {
+    const existing = attendances.find(a => a.userId === userId && a.date === date);
+    if (type === null) {
+      if (existing) setAttendances(attendances.filter(a => a.id !== existing.id));
+      return;
+    }
+    const by = currentUser?.role === 'manager' ? 'manager' : 'employee';
+    if (existing) {
+      setAttendances(attendances.map(a => a.id === existing.id ? { ...a, type, editedBy: by, editedAt: new Date().toISOString() } : a));
+    } else {
+      setAttendances([...attendances, {
+        id: Date.now() * 1000 + Math.floor(Math.random() * 1000),
+        userId, date, type,
+        bu: true, // điểm danh bù (khai sau)
+        confirmedBy: by,
+        createdAt: new Date().toISOString()
+      }]);
     }
   };
 
@@ -1637,10 +1665,16 @@ export default function TaskDashboard() {
                               <span className="text-gray-700">OT (0.5):</span>
                               <span className="font-bold text-gray-900">{workDays.otDays} ngày</span>
                             </div>
-                            {workDays.autoDays > 0 && (
-                              <div className="flex justify-between p-3 bg-sky-50 rounded border border-sky-200">
-                                <span className="text-sky-800">🔄 Tự ghi nhận từ task (quên điểm danh, đã tính vào Cả ngày):</span>
-                                <span className="font-bold text-sky-900">{workDays.autoDays} ngày</span>
+                            {workDays.pendingDays > 0 && (
+                              <div className="flex justify-between p-3 bg-amber-50 rounded border border-amber-300">
+                                <span className="text-amber-800">⏳ Có task nhưng chưa điểm danh (chờ xác nhận, <b>chưa cộng</b>):</span>
+                                <span className="font-bold text-amber-900">{workDays.pendingDays} ngày</span>
+                              </div>
+                            )}
+                            {workDays.buDays > 0 && (
+                              <div className="flex justify-between p-2 bg-gray-50 rounded">
+                                <span className="text-gray-600">✍️ Trong đó điểm danh bù (khai sau):</span>
+                                <span className="font-bold text-gray-700">{workDays.buDays} ngày</span>
                               </div>
                             )}
                             <div className="flex justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded border border-green-200">
@@ -1683,9 +1717,10 @@ export default function TaskDashboard() {
                         let list = getEffectiveAttendances(emp.id, attendanceDateFrom, attendanceDateTo);
                         list = list.sort((a, b) => a.date < b.date ? -1 : 1);
 
-                        // Map ngày -> loại buổi ('auto' = tự ghi nhận từ task)
+                        // Map ngày -> loại buổi ('pending' = có task, chờ xác nhận)
                         const byDate = {};
-                        list.forEach(a => { byDate[a.date] = a.auto ? 'auto' : a.type; });
+                        const buDates = new Set();
+                        list.forEach(a => { byDate[a.date] = a.pending ? 'pending' : a.type; if (a.bu) buDates.add(a.date); });
 
                         // Xác định khoảng tháng cần hiển thị
                         const dates = list.map(a => a.date);
@@ -1697,14 +1732,14 @@ export default function TaskDashboard() {
                           t === 'half_morning' ? 'bg-amber-400 text-white' :
                           t === 'half_afternoon' ? 'bg-orange-400 text-white' :
                           t === 'ot_half' ? 'bg-purple-500 text-white' :
-                          t === 'auto' ? 'bg-sky-500 text-white' : ''
+                          t === 'pending' ? 'bg-white text-amber-700 border-2 border-dashed border-amber-400' : ''
                         );
                         const shortLabel = (t) => (
                           t === 'full_day' ? 'Cả ngày' :
                           t === 'half_morning' ? 'Sáng' :
                           t === 'half_afternoon' ? 'Chiều' :
                           t === 'ot_half' ? 'OT' :
-                          t === 'auto' ? 'Tự động' : ''
+                          t === 'pending' ? 'Chờ' : ''
                         );
 
                         // Danh sách các tháng từ start đến end
@@ -1737,7 +1772,9 @@ export default function TaskDashboard() {
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block"></span> Nửa ngày (Sáng)</span>
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-400 inline-block"></span> Nửa ngày (Chiều)</span>
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block"></span> OT</span>
-                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-sky-500 inline-block"></span> Tự ghi nhận từ task</span>
+                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded border-2 border-dashed border-amber-400 inline-block"></span> Có task, chờ xác nhận</span>
+                                  <span className="flex items-center gap-1">✍️ = điểm danh bù</span>
+                                  <span className="text-gray-500">· Bấm vào 1 ngày để chọn / sửa loại điểm danh</span>
                                 </div>
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                   {months.map(([y, m]) => {
@@ -1760,10 +1797,17 @@ export default function TaskDashboard() {
                                             const ds = `${y}-${pad(m)}-${pad(d)}`;
                                             const t = byDate[ds];
                                             return (
-                                              <div key={ds} className={`aspect-square flex flex-col items-center justify-center rounded ${t ? styleOf(t) : 'bg-gray-50 text-gray-400'}`}>
+                                              <button
+                                                key={ds}
+                                                type="button"
+                                                disabled={ds > localDate()}
+                                                onClick={() => setDayPicker({ userId: emp.id, name: emp.name, date: ds, current: t || null })}
+                                                title="Bấm để chọn / sửa điểm danh"
+                                                className={`aspect-square flex flex-col items-center justify-center rounded hover:ring-2 hover:ring-blue-400 disabled:hover:ring-0 disabled:cursor-default ${t ? styleOf(t) : 'bg-gray-50 text-gray-400'}`}
+                                              >
                                                 <span className="font-semibold leading-none text-sm">{d}</span>
-                                                {t && <span className="leading-none mt-0.5" style={{ fontSize: '9px' }}>{shortLabel(t)}</span>}
-                                              </div>
+                                                {t && <span className="leading-none mt-0.5" style={{ fontSize: '9px' }}>{buDates.has(ds) ? '✍️' : ''}{shortLabel(t)}</span>}
+                                              </button>
                                             );
                                           })}
                                         </div>
@@ -1874,6 +1918,11 @@ export default function TaskDashboard() {
                           <p className="font-bold text-gray-900">{emp.name}</p>
                           <p className="text-xs text-gray-500">{emp.position} · {emp.status}</p>
                         </div>
+                        {r.pendingDays > 0 && (
+                          <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
+                            ⏳ <b>{r.pendingDays} ngày</b> có task nhưng chưa điểm danh, <b>chưa được cộng công</b>. Xác nhận ở tab Attendance Report (bấm vào ngày trên lịch) trước khi chốt lương.
+                          </div>
+                        )}
 
                         {section("Ngày công")}
                         {line({ emp: emp, r: r, label: "Tổng số ngày công tháng", field: "standardDays", step: 0.5, hint: "T2–T6: 1 công, T7: 0,5 công", })}
@@ -1908,6 +1957,46 @@ export default function TaskDashboard() {
               </div>
             );
           })()}
+
+          {/* Chọn loại điểm danh cho 1 ngày (manager) */}
+          {dayPicker && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setDayPicker(null)}>
+              <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-lg font-bold text-gray-900">📅 {dayPicker.name}</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  Ngày {dayPicker.date.split('-').reverse().join('/')}
+                  {dayPicker.current === 'pending' && ' · có task nhưng chưa điểm danh'}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['full_day', '🕐 Cả ngày', 'bg-emerald-500'],
+                    ['half_morning', '🌅 Sáng', 'bg-amber-400'],
+                    ['half_afternoon', '🌆 Chiều', 'bg-orange-400'],
+                    ['ot_half', '⚡ OT (0.5)', 'bg-purple-500'],
+                  ].map(([type, label, bg]) => (
+                    <button
+                      key={type}
+                      onClick={() => { setAttendanceForDay(dayPicker.userId, dayPicker.date, type); setDayPicker(null); }}
+                      className={`${bg} text-white font-semibold py-2 rounded-lg hover:opacity-90 ${dayPicker.current === type ? 'ring-4 ring-blue-300' : ''}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  {dayPicker.current && dayPicker.current !== 'pending' && (
+                    <button
+                      onClick={() => { setAttendanceForDay(dayPicker.userId, dayPicker.date, null); setDayPicker(null); }}
+                      className="flex-1 bg-red-50 text-red-700 font-semibold py-2 rounded-lg hover:bg-red-100"
+                    >
+                      Xóa điểm danh
+                    </button>
+                  )}
+                  <button onClick={() => setDayPicker(null)} className="flex-1 bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300">Hủy</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Modals */}
           {editingTypeItem && (
@@ -2144,6 +2233,44 @@ export default function TaskDashboard() {
             </div>
           )}
         </div>
+
+        {/* Ngày có task nhưng quên điểm danh -> nhân viên tự khai bù */}
+        {(() => {
+          const pending = getEffectiveAttendances(currentUser.id).filter(a => a.pending)
+            .sort((a, b) => a.date < b.date ? 1 : -1);
+          if (pending.length === 0) return null;
+          return (
+            <div className="bg-amber-50 rounded-xl shadow-sm p-5 border-2 border-amber-300">
+              <h3 className="font-bold text-amber-900">⏳ Bạn quên điểm danh {pending.length} ngày</h3>
+              <p className="text-sm text-amber-800 mb-3">Những ngày này bạn có task nhưng chưa điểm danh nên <b>chưa được tính công</b>. Hãy chọn loại cho từng ngày:</p>
+              <div className="space-y-2">
+                {pending.map(a => {
+                  const [y, m, d] = a.date.split('-');
+                  const dow = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(+y, +m - 1, +d).getDay()];
+                  return (
+                    <div key={a.date} className="flex flex-wrap items-center gap-2 bg-white rounded-lg p-2 border border-amber-200">
+                      <span className="font-semibold text-gray-900 w-28">{dow}, {d}/{m}/{y}</span>
+                      {[
+                        ['full_day', '🕐 Cả ngày', 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'],
+                        ['half_morning', '🌅 Sáng', 'bg-amber-100 text-amber-800 hover:bg-amber-200'],
+                        ['half_afternoon', '🌆 Chiều', 'bg-orange-100 text-orange-800 hover:bg-orange-200'],
+                      ].map(([type, label, cls]) => (
+                        <button
+                          key={type}
+                          onClick={() => setAttendanceForDay(currentUser.id, a.date, type)}
+                          className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${cls}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-amber-700 mt-2">Điểm danh khai bù sẽ được đánh dấu ✍️ để quản lý kiểm tra.</p>
+            </div>
+          );
+        })()}
 
         {/* Create Task */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">

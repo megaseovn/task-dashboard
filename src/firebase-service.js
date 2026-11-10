@@ -254,3 +254,60 @@ export const listenToWorkStatusChanges = (callback) => {
   });
   return unsubscribe;
 };
+
+// ==================== GHI AN TOÀN (KHÔNG GHI ĐÈ CẢ DANH SÁCH) ====================
+// Đọc dữ liệu MỚI NHẤT trên server rồi chỉ áp dụng phần thay đổi (thêm/sửa/xóa theo id).
+// Tránh lỗi máy có dữ liệu cũ ghi đè làm mất task/điểm danh của máy khác.
+import { runTransaction } from 'firebase/database';
+
+export const toArray = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  return Object.values(val).filter(Boolean);
+};
+
+const applyChangesSafely = async (path, upserts, deleteIds) => {
+  if (upserts.length === 0 && deleteIds.length === 0) return true;
+  try {
+    await runTransaction(dbRef(db, path), (current) => {
+      let arr = toArray(current).filter(item => !deleteIds.includes(item.id));
+      upserts.forEach(u => {
+        const i = arr.findIndex(item => item.id === u.id);
+        if (i >= 0) arr[i] = u; else arr.push(u);
+      });
+      return arr;
+    });
+    return true;
+  } catch (error) {
+    console.error(`Error saving ${path} safely:`, error);
+    return false;
+  }
+};
+
+export const saveTasksChangesSafely = (upserts, deleteIds) =>
+  applyChangesSafely('tasks', upserts, deleteIds);
+
+export const saveAttendancesChangesSafely = (upserts, deleteIds) =>
+  applyChangesSafely('attendances', upserts, deleteIds);
+
+// ==================== LƯƠNG ====================
+// Cấu trúc: salaries/<YYYY-MM>/<employeeId>/<field> = số do manager nhập
+// Chỉ lưu các ô manager đã sửa; ô trống = dùng số tự tính.
+export const saveSalaryField = async (month, employeeId, field, value) => {
+  try {
+    await dbSet(dbRef(db, `salaries/${month}/${employeeId}/${field}`), value === null ? null : value);
+    return true;
+  } catch (error) {
+    console.error('Error saving salary:', error);
+    return false;
+  }
+};
+
+export const listenToSalariesChanges = (callback) => {
+  const unsubscribe = dbOnValue(dbRef(db, 'salaries'), (snapshot) => {
+    callback(snapshot.exists() ? snapshot.val() : {});
+  }, (error) => {
+    console.error('Error listening to salaries:', error);
+  });
+  return unsubscribe;
+};

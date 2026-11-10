@@ -22,7 +22,59 @@ import {
   listenToTaskTypesChanges,
   listenToProjectsChanges,
   listenToWorkStatusChanges,
+  saveTasksChangesSafely,
+  saveAttendancesChangesSafely,
+  toArray,
+  saveSalaryField,
+  listenToSalariesChanges,
 } from './firebase-service';
+
+// Ngày theo giờ máy (giờ Việt Nam), dạng YYYY-MM-DD.
+// Thay cho toISOString() vốn dùng giờ UTC -> trước 7h sáng bị lùi 1 ngày.
+const localDate = (d = new Date()) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+// So sánh 2 danh sách theo id -> tìm phần được thêm/sửa và phần bị xóa
+const diffById = (prev, next) => {
+  const prevMap = new Map(prev.map(x => [x.id, JSON.stringify(x)]));
+  const nextIds = new Set(next.map(x => x.id));
+  const upserts = next.filter(x => prevMap.get(x.id) !== JSON.stringify(x));
+  const deleteIds = prev.filter(x => !nextIds.has(x.id)).map(x => x.id);
+  return { upserts, deleteIds };
+};
+
+// Ô nhập lương: giữ số đang gõ, chỉ lưu khi rời ô hoặc nhấn Enter.
+// overridden = manager đã sửa (nền xanh, có nút ↺ để quay về số tự tính)
+function SalaryInput({ value, overridden, step = 1, onCommit }) {
+  const [draft, setDraft] = useState(String(value ?? ''));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setDraft(String(value ?? '')); }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    const v = draft.trim().replace(',', '.');
+    if (v === String(value ?? '')) return;
+    onCommit(v === '' ? null : Number(v));
+  };
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <input
+        type="number"
+        step={step}
+        value={draft}
+        onFocus={() => setEditing(true)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+        className={`w-24 px-2 py-1 text-center border rounded text-sm focus:ring-2 focus:ring-blue-500 ${overridden ? 'bg-blue-50 border-blue-300 font-semibold' : 'border-gray-200'}`}
+      />
+      {overridden ? (
+        <button title="Quay về số tự tính" onClick={() => onCommit(null)} className="text-blue-500 hover:text-blue-700 text-xs">↺</button>
+      ) : <span className="w-3" />}
+    </div>
+  );
+}
 
 export default function TaskDashboard() {
   // ==================== LOCALSTORAGE HELPERS ====================
@@ -63,6 +115,8 @@ export default function TaskDashboard() {
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState(null);
   const [managerTab, setManagerTab] = useState('tasks');
+  const [salaries, setSalaries] = useState({});
+  const [salaryMonth, setSalaryMonth] = useState(() => localDate().slice(0, 7)); // YYYY-MM
   const [attendanceDateFrom, setAttendanceDateFrom] = useState('');
   const [attendanceDateTo, setAttendanceDateTo] = useState('');
   const [selectedAttendanceEmployee, setSelectedAttendanceEmployee] = useState('all');
@@ -134,9 +188,10 @@ export default function TaskDashboard() {
   });
 
   const setTasks = (data) => {
+    const { upserts, deleteIds } = diffById(tasks, data);
     setTasksState(data);
     localStorage.setItem('tasks', JSON.stringify(data));
-    saveTasksToFirebase(data);
+    saveTasksChangesSafely(upserts, deleteIds); // chỉ ghi phần thay đổi
   };
   const [attendances, setAttendancesState] = useState(() => {
     const saved = localStorage.getItem('attendances');
@@ -144,9 +199,10 @@ export default function TaskDashboard() {
   });
 
   const setAttendances = (data) => {
+    const { upserts, deleteIds } = diffById(attendances, data);
     setAttendancesState(data);
     localStorage.setItem('attendances', JSON.stringify(data));
-    saveAttendancesToFirebase(data);
+    saveAttendancesChangesSafely(upserts, deleteIds); // chỉ ghi phần thay đổi
   };
 
   const [newTaskForm, setNewTaskForm] = useState({
@@ -200,7 +256,7 @@ export default function TaskDashboard() {
   // ✅ Set default filter to today on first load
   useEffect(() => {
     if (filterDateFrom === '' && filterDateTo === '') {
-      const today = new Date().toISOString().split('T')[0];
+      const today = localDate();
       setFilterDateFrom(today);
       setFilterDateTo(today);
     }
@@ -222,7 +278,7 @@ export default function TaskDashboard() {
     const handleStorageChange = (e) => {
       if (e.key === 'employees') {
         const updatedEmployees = JSON.parse(e.newValue);
-        setEmployees(updatedEmployees);
+        setEmployeesState(updatedEmployees); // chỉ cập nhật hiển thị, không ghi lại Firebase
       }
       if (e.key === 'currentUser') {
         const updatedUser = e.newValue ? JSON.parse(e.newValue) : null;
@@ -230,11 +286,11 @@ export default function TaskDashboard() {
       }
       if (e.key === 'tasks') {
         const updatedTasks = JSON.parse(e.newValue);
-        setTasks(updatedTasks);
+        setTasksState(updatedTasks); // chỉ cập nhật hiển thị, không ghi lại Firebase
       }
       if (e.key === 'attendances') {
         const updatedAttendances = JSON.parse(e.newValue);
-        setAttendances(updatedAttendances);
+        setAttendancesState(updatedAttendances); // chỉ cập nhật hiển thị, không ghi lại Firebase
       }
     };
     
@@ -299,7 +355,8 @@ export default function TaskDashboard() {
   }, []); // Only run once on mount
 
   useEffect(() => {
-    const unsubscribeTasks = listenToTasksChanges((remoteTasks) => {
+    const unsubscribeTasks = listenToTasksChanges((raw) => {
+      const remoteTasks = toArray(raw);
       setTasksState(remoteTasks);
       localStorage.setItem('tasks', JSON.stringify(remoteTasks));
     });
@@ -307,7 +364,8 @@ export default function TaskDashboard() {
   }, []);
 
   useEffect(() => {
-    const unsubscribeAttendances = listenToAttendancesChanges((remoteAttendances) => {
+    const unsubscribeAttendances = listenToAttendancesChanges((raw) => {
+      const remoteAttendances = toArray(raw);
       setAttendancesState(remoteAttendances);
       localStorage.setItem('attendances', JSON.stringify(remoteAttendances));
     });
@@ -348,8 +406,13 @@ export default function TaskDashboard() {
     });
     return () => unsubscribeWorkStatus();
   }, []);
+
+  useEffect(() => {
+    const unsubscribeSalaries = listenToSalariesChanges((data) => setSalaries(data || {}));
+    return () => unsubscribeSalaries();
+  }, []);
   // ==================== UTILS ====================
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDate();
   
   const getDateInfo = (dateStr) => {
     const date = new Date(dateStr + 'T00:00:00');
@@ -419,17 +482,46 @@ export default function TaskDashboard() {
   };
 
   // ==================== ATTENDANCE CALCULATIONS ====================
+  // ==================== ĐIỂM DANH THỰC TẾ ====================
+  // Các ngày nhân viên có task, chỉ tính đến hôm nay.
+  // deadlineOnly = true: chỉ theo cột Hạn (dùng để tự ghi nhận điểm danh)
+  const getTaskDates = (userId, deadlineOnly = false) => {
+    const todayStr = localDate();
+    const dates = new Set();
+    tasks
+      .filter(t => t.assignee === userId || (!t.assignee && t.createdBy === userId))
+      .forEach(t => {
+        const ds = deadlineOnly ? [t.deadline] : [t.deadline, (t.createdAt || '').slice(0, 10)];
+        ds.forEach(d => {
+          if (d && d <= todayStr) dates.add(d);
+        });
+      });
+    return dates;
+  };
+
+  // Điểm danh thật + ngày có task mà quên điểm danh (tự ghi nhận = Cả ngày, auto: true)
+  const getEffectiveAttendances = (userId, dateFromStr, dateToStr) => {
+    const real = attendances.filter(a => a.userId === userId);
+    const realDates = new Set(real.map(a => a.date));
+    const auto = [...getTaskDates(userId, true)]
+      .filter(d => !realDates.has(d))
+      .map(d => ({ id: `auto-${userId}-${d}`, userId, date: d, type: 'full_day', auto: true }));
+    let list = [...real, ...auto];
+    if (dateFromStr) list = list.filter(a => a.date >= dateFromStr);
+    if (dateToStr) list = list.filter(a => a.date <= dateToStr);
+    return list;
+  };
+
   const calculateWorkDays = (userId, dateFromStr, dateToStr) => {
-    let userAttendances = attendances.filter(a => a.userId === userId);
-    
-    if (dateFromStr) userAttendances = userAttendances.filter(a => a.date >= dateFromStr);
-    if (dateToStr) userAttendances = userAttendances.filter(a => a.date <= dateToStr);
+    const userAttendances = getEffectiveAttendances(userId, dateFromStr, dateToStr);
 
     let fullDays = 0;
     let halfDays = 0;
     let otDays = 0;
+    let autoDays = 0;
 
     userAttendances.forEach(att => {
+      if (att.auto) autoDays += 1;
       if (att.type === 'full_day') fullDays += 1;
       else if (att.type === 'half_morning' || att.type === 'half_afternoon') halfDays += 1;
       else if (att.type === 'ot_half') otDays += 0.5;
@@ -439,49 +531,76 @@ export default function TaskDashboard() {
       fullDays,
       halfDays,
       totalWorkDays: fullDays + (halfDays / 2) + otDays,
-      otDays
+      otDays,
+      autoDays
     };
   };
 
-  const calculateParkingDays = (userId, dateFromStr, dateToStr) => {
-    let userAttendances = attendances.filter(a => 
-      a.userId === userId && isWeekday(a.date)
-    );
-    
-    if (dateFromStr) userAttendances = userAttendances.filter(a => a.date >= dateFromStr);
-    if (dateToStr) userAttendances = userAttendances.filter(a => a.date <= dateToStr);
-
-    let parkingDays = 0;
-
-    userAttendances.forEach(att => {
-      if (att.type === 'full_day') parkingDays += 1;
-      else if (att.type === 'half_morning' || att.type === 'half_afternoon') parkingDays += 1;
-    });
-
-    return parkingDays;
-  };
 
   const getTaskCoverage = (userId, dateFromStr, dateToStr) => {
-    let monthTasks = tasks.filter(t => t.assignee === userId);
-    
-    if (dateFromStr) monthTasks = monthTasks.filter(t => t.createdAt >= dateFromStr);
-    if (dateToStr) monthTasks = monthTasks.filter(t => t.createdAt <= dateToStr);
-    
-    let monthAttendances = attendances.filter(a => a.userId === userId);
-    
-    if (dateFromStr) monthAttendances = monthAttendances.filter(a => a.date >= dateFromStr);
-    if (dateToStr) monthAttendances = monthAttendances.filter(a => a.date <= dateToStr);
-    
-    const attendanceDates = monthAttendances.map(a => a.date);
-    const taskDates = [...new Set(monthTasks.map(t => t.createdAt))];
-    
-    const missingDates = attendanceDates.filter(date => !taskDates.includes(date));
-    
+    const taskDates = getTaskDates(userId);
+    const attendanceDates = [...new Set(
+      getEffectiveAttendances(userId, dateFromStr, dateToStr).map(a => a.date)
+    )].sort();
+    const missingDates = attendanceDates.filter(date => !taskDates.has(date));
     return {
       total: attendanceDates.length,
-      withTasks: attendanceDates.filter(date => taskDates.includes(date)).length,
+      withTasks: attendanceDates.length - missingDates.length,
       missing: missingDates
     };
+
+  // ==================== LƯƠNG (đơn vị: nghìn đồng) ====================
+  // Công chuẩn tháng: T2–T6 = 1 công, T7 = 0,5 công, CN = 0
+  const countStandardDays = (month) => {
+    const [y, m] = month.split('-').map(Number);
+    const days = new Date(y, m, 0).getDate();
+    let total = 0;
+    for (let d = 1; d <= days; d++) {
+      const dow = new Date(y, m - 1, d).getDay();
+      if (dow >= 1 && dow <= 5) total += 1;
+      else if (dow === 6) total += 0.5;
+    }
+    return total;
+  };
+
+  // Lương cứng / BHXH: tháng này chưa nhập thì lấy số của tháng gần nhất trước đó
+  const getCarriedValue = (empId, month, field) => {
+    const prevMonths = Object.keys(salaries).filter(k => k < month).sort().reverse();
+    for (const k of prevMonths) {
+      const v = salaries[k]?.[empId]?.[field];
+      if (v !== undefined && v !== null) return v;
+    }
+    return 0;
+  };
+
+  const computeSalary = (emp, month) => {
+    const saved = salaries[month]?.[emp.id] || {};
+    const has = (f) => saved[f] !== undefined && saved[f] !== null;
+    const pick = (f, auto) => (has(f) ? Number(saved[f]) : auto);
+
+    const [y, m] = month.split('-').map(Number);
+    const from = `${month}-01`;
+    const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    const wd = calculateWorkDays(emp.id, from, to);
+    const attended = wd.fullDays + wd.halfDays / 2; // không gồm OT (OT tính riêng)
+
+    const standardDays = pick('standardDays', countStandardDays(month));
+    const leaveUsed = pick('leaveUsed', 0);
+    const daysOff = pick('daysOff', Math.max(0, standardDays - attended));
+    const actualDays = pick('actualDays', attended + leaveUsed);
+    const baseSalary = pick('baseSalary', getCarriedValue(emp.id, month, 'baseSalary'));
+    const dailyRate = standardDays > 0 ? baseSalary / standardDays : 0;
+    const otPay = pick('otPay', Math.round(wd.otDays * dailyRate));
+    const bonus = pick('bonus', 0);
+    const bhxh = pick('bhxh', getCarriedValue(emp.id, month, 'bhxh'));
+    const total = Math.round(dailyRate * actualDays + otPay + bonus - bhxh);
+
+    return {
+      values: { standardDays, daysOff, actualDays, leaveUsed, baseSalary, otPay, bonus, bhxh },
+      overridden: Object.fromEntries(Object.keys(saved).map(k => [k, has(k)])),
+      attended, otDays: wd.otDays, dailyRate, total
+    };
+  };
   };
 
   // ==================== HANDLERS ====================
@@ -535,7 +654,7 @@ export default function TaskDashboard() {
       return;
     }
     const assignee = currentUser.role === 'manager' && newTaskForm.assignee ? parseInt(newTaskForm.assignee) : (currentUser.role === 'employee' ? currentUser.id : null);
-    const newId = Math.max(...tasks.map(t => t.id || 0), 0) + 1;
+    const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000); // id không trùng giữa các máy
     setTasks([...tasks, {
       id: newId,
       ...newTaskForm,
@@ -544,7 +663,7 @@ export default function TaskDashboard() {
       links: [],
       comments: [],
       createdBy: currentUser.id,
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: localDate(),
     }]);
     setNewTaskForm({ title: '', type: '', project: '', status: '', deadline: '', wordCount: '', assignee: '' });
     alert('Tạo task thành công!');
@@ -562,7 +681,7 @@ export default function TaskDashboard() {
   };
 
   const handleSaveAttendance = (type) => {
-    const newId = Math.max(...attendances.map(a => a.id || 0), 0) + 1;
+    const newId = Date.now() * 1000 + Math.floor(Math.random() * 1000); // id không trùng giữa các máy
     const newAttendance = {
       id: newId,
       userId: currentUser.id,
@@ -731,7 +850,7 @@ export default function TaskDashboard() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `tasks_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `tasks_${localDate()}.csv`);
     link.click();
   };
 
@@ -786,7 +905,7 @@ export default function TaskDashboard() {
         const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Tasks');
-        XLSX.writeFile(wb, `tasks_${new Date().toISOString().split('T')[0]}.xlsx`);
+        XLSX.writeFile(wb, `tasks_${localDate()}.xlsx`);
       };
       document.head.appendChild(script);
     } catch (error) {
@@ -986,6 +1105,16 @@ export default function TaskDashboard() {
                 }`}
               >
                 📊 Attendance Report
+              </button>
+              <button
+                onClick={() => setManagerTab('salary')}
+                className={`px-4 py-2 rounded-lg font-semibold transition-all ${
+                  managerTab === 'salary'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                💰 Lương
               </button>
             </div>
           </div>
@@ -1424,7 +1553,7 @@ export default function TaskDashboard() {
                       className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="all">Tất cả</option>
-                      {employees.filter(e => e.role === 'employee').map(e => (
+                      {employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc').map(e => (
                         <option key={e.id} value={e.id}>{e.name}</option>
                       ))}
                     </select>
@@ -1447,7 +1576,7 @@ export default function TaskDashboard() {
                   }
 
                   let list = selectedAttendanceEmployee === 'all'
-                    ? employees.filter(e => e.role === 'employee')
+                    ? employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc')
                     : employees.filter(e => e.id === parseInt(selectedAttendanceEmployee));
 
                   // Khi xem tất cả: chỉ hiển thị nhân sự có đi làm (tổng ngày công > 0)
@@ -1468,9 +1597,7 @@ export default function TaskDashboard() {
 
                   return list.map(emp => {
                   const workDays = calculateWorkDays(emp.id, attendanceDateFrom, attendanceDateTo);
-                  const parkingDays = calculateParkingDays(emp.id, attendanceDateFrom, attendanceDateTo);
                   const taskCoverage = getTaskCoverage(emp.id, attendanceDateFrom, attendanceDateTo);
-                  const parkingCost = parkingDays * 4000;
 
                   return (
                     <div key={emp.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1509,27 +1636,15 @@ export default function TaskDashboard() {
                               <span className="text-gray-700">OT (0.5):</span>
                               <span className="font-bold text-gray-900">{workDays.otDays} ngày</span>
                             </div>
+                            {workDays.autoDays > 0 && (
+                              <div className="flex justify-between p-3 bg-sky-50 rounded border border-sky-200">
+                                <span className="text-sky-800">🔄 Tự ghi nhận từ task (quên điểm danh, đã tính vào Cả ngày):</span>
+                                <span className="font-bold text-sky-900">{workDays.autoDays} ngày</span>
+                              </div>
+                            )}
                             <div className="flex justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded border border-green-200">
                               <span className="text-gray-900 font-bold">Tổng ngày công:</span>
                               <span className="font-bold text-emerald-700 text-lg">{workDays.totalWorkDays.toFixed(1)} ngày</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Parking Days Stats */}
-                        <div className="space-y-4">
-                          <h4 className="font-bold text-gray-900 flex items-center gap-2">
-                            <TrendingUp className="w-5 h-5 text-emerald-600" />
-                            Tiền gửi xe (T2-T6)
-                          </h4>
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between p-2 bg-emerald-50 rounded">
-                              <span className="text-gray-700">Buổi trực tiếp:</span>
-                              <span className="font-bold text-gray-900">{parkingDays} buổi</span>
-                            </div>
-                            <div className="flex justify-between p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded border border-amber-200">
-                              <span className="text-gray-900 font-bold">Tiền tính:</span>
-                              <span className="font-bold text-orange-700 text-lg">{parkingDays} × 4k = {(parkingCost / 1000).toFixed(0)}k VND</span>
                             </div>
                           </div>
                         </div>
@@ -1564,14 +1679,12 @@ export default function TaskDashboard() {
                       </div>
 
                       {expandedAttendance[emp.id] && (() => {
-                        let list = attendances.filter(a => a.userId === emp.id);
-                        if (attendanceDateFrom) list = list.filter(a => a.date >= attendanceDateFrom);
-                        if (attendanceDateTo) list = list.filter(a => a.date <= attendanceDateTo);
+                        let list = getEffectiveAttendances(emp.id, attendanceDateFrom, attendanceDateTo);
                         list = list.sort((a, b) => a.date < b.date ? -1 : 1);
 
-                        // Map ngày -> loại buổi
+                        // Map ngày -> loại buổi ('auto' = tự ghi nhận từ task)
                         const byDate = {};
-                        list.forEach(a => { byDate[a.date] = a.type; });
+                        list.forEach(a => { byDate[a.date] = a.auto ? 'auto' : a.type; });
 
                         // Xác định khoảng tháng cần hiển thị
                         const dates = list.map(a => a.date);
@@ -1582,13 +1695,15 @@ export default function TaskDashboard() {
                           t === 'full_day' ? 'bg-emerald-500 text-white' :
                           t === 'half_morning' ? 'bg-amber-400 text-white' :
                           t === 'half_afternoon' ? 'bg-orange-400 text-white' :
-                          t === 'ot_half' ? 'bg-purple-500 text-white' : ''
+                          t === 'ot_half' ? 'bg-purple-500 text-white' :
+                          t === 'auto' ? 'bg-sky-500 text-white' : ''
                         );
                         const shortLabel = (t) => (
                           t === 'full_day' ? 'Cả ngày' :
                           t === 'half_morning' ? 'Sáng' :
                           t === 'half_afternoon' ? 'Chiều' :
-                          t === 'ot_half' ? 'OT' : ''
+                          t === 'ot_half' ? 'OT' :
+                          t === 'auto' ? 'Tự động' : ''
                         );
 
                         // Danh sách các tháng từ start đến end
@@ -1621,6 +1736,7 @@ export default function TaskDashboard() {
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-400 inline-block"></span> Nửa ngày (Sáng)</span>
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-400 inline-block"></span> Nửa ngày (Chiều)</span>
                                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-500 inline-block"></span> OT</span>
+                                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-sky-500 inline-block"></span> Tự ghi nhận từ task</span>
                                 </div>
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                   {months.map(([y, m]) => {
@@ -1672,28 +1788,21 @@ export default function TaskDashboard() {
                     <TrendingUp className="w-6 h-6" />
                     📊 TỔNG HỢP {attendanceDateFrom ? attendanceDateFrom : 'Từ đầu'} - {attendanceDateTo ? attendanceDateTo : 'Đến nay'}
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-white/20 rounded-lg p-4 backdrop-blur">
-                      <p className="text-white/80 text-sm mb-1">Tổng tiền gửi xe</p>
+                      <p className="text-white/80 text-sm mb-1">Tổng ngày công (tất cả nhân viên)</p>
                       <p className="text-3xl font-bold">
-                        {(employees.filter(e => e.role === 'employee').reduce((sum, emp) => 
-                          sum + calculateParkingDays(emp.id, attendanceDateFrom, attendanceDateTo) * 4000, 0) / 1000000).toFixed(1)}M VND
-                      </p>
-                    </div>
-                    <div className="bg-white/20 rounded-lg p-4 backdrop-blur">
-                      <p className="text-white/80 text-sm mb-1">Tổng buổi trực tiếp</p>
-                      <p className="text-3xl font-bold">
-                        {employees.filter(e => e.role === 'employee').reduce((sum, emp) => 
-                          sum + calculateParkingDays(emp.id, attendanceDateFrom, attendanceDateTo), 0)} buổi
+                        {employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc').reduce((sum, emp) =>
+                          sum + calculateWorkDays(emp.id, attendanceDateFrom, attendanceDateTo).totalWorkDays, 0).toFixed(1)} ngày
                       </p>
                     </div>
                     <div className="bg-white/20 rounded-lg p-4 backdrop-blur">
                       <p className="text-white/80 text-sm mb-1">Nhân viên báo cáo đầy đủ</p>
                       <p className="text-3xl font-bold">
-                        {employees.filter(e => e.role === 'employee').filter(emp => {
+                        {employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc').filter(emp => {
                           const coverage = getTaskCoverage(emp.id, attendanceDateFrom, attendanceDateTo);
                           return coverage.missing.length === 0 && coverage.total > 0;
-                        }).length} / {employees.filter(e => e.role === 'employee').length}
+                        }).length} / {employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc').length}
                       </p>
                     </div>
                   </div>
@@ -1701,6 +1810,108 @@ export default function TaskDashboard() {
               )}
             </>
           )}
+
+          {/* SALARY TAB */}
+          {managerTab === 'salary' && (() => {
+            const salaryEmployees = employees.filter(e => e.role === 'employee' && e.status !== 'Đã nghỉ việc');
+            const rows = salaryEmployees.map(emp => ({ emp, r: computeSalary(emp, salaryMonth) }));
+            const fmt = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
+            const [yy, mm] = salaryMonth.split('-');
+            const save = (empId, field) => (v) => saveSalaryField(salaryMonth, empId, field, v);
+
+            const inputRow = (label, field, step, hint) => (
+              <tr className="border-b border-gray-100">
+                <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap">{label}</td>
+                {rows.map(({ emp, r }) => (
+                  <td key={emp.id} className="py-2 px-2 text-center">
+                    <SalaryInput
+                      value={r.values[field]}
+                      overridden={!!r.overridden[field]}
+                      step={step}
+                      onCommit={save(emp.id, field)}
+                    />
+                    {hint && <p className="text-[10px] text-gray-400 mt-0.5">{hint(r)}</p>}
+                  </td>
+                ))}
+              </tr>
+            );
+
+            return (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900">💰 Lương tháng {mm}/{yy}</h2>
+                    <p className="text-sm text-gray-500">Đơn vị: nghìn đồng. Ô nền xanh = manager đã sửa (bấm ↺ để quay về số tự tính). Xóa trống ô = dùng số tự tính.</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-semibold text-gray-700 mb-1 block">Tháng</label>
+                    <input
+                      type="month"
+                      value={salaryMonth}
+                      onChange={(e) => e.target.value && setSalaryMonth(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {rows.length === 0 ? (
+                  <p className="text-gray-500 text-sm">Chưa có nhân viên đang làm.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border border-gray-200 rounded-lg">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          <th className="py-3 px-3 text-left text-gray-600">Mục lục</th>
+                          {rows.map(({ emp }) => (
+                            <th key={emp.id} className="py-3 px-2 text-center font-bold text-gray-900 min-w-[130px]">{emp.name}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border-b border-gray-100">
+                          <td className="py-2 px-3 font-semibold text-gray-800">Vị trí</td>
+                          {rows.map(({ emp }) => (
+                            <td key={emp.id} className="py-2 px-2 text-center text-gray-700">
+                              {emp.position}<p className="text-[10px] text-gray-400">{emp.status}</p>
+                            </td>
+                          ))}
+                        </tr>
+                        {inputRow('Tổng số ngày công tháng', 'standardDays', 0.5, () => 'T2–T6: 1, T7: 0,5')}
+                        {inputRow('Số ngày nghỉ', 'daysOff', 0.5)}
+                        {inputRow('Ngày công thực tế', 'actualDays', 0.5, (r) => `điểm danh ${fmt(r.attended)} + phép`)}
+                        {inputRow('Ngày phép dùng', 'leaveUsed', 0.5)}
+                        {inputRow('Lương cứng + ăn trưa', 'baseSalary', 1)}
+                        <tr className="border-b border-gray-100 bg-gray-50">
+                          <td className="py-2 px-3 text-gray-600">Lương 1 ngày (tự tính)</td>
+                          {rows.map(({ emp, r }) => (
+                            <td key={emp.id} className="py-2 px-2 text-center text-gray-600">{fmt(r.dailyRate)}</td>
+                          ))}
+                        </tr>
+                        {inputRow('Lương OT', 'otPay', 1, (r) => `${fmt(r.otDays)} ngày OT`)}
+                        {inputRow('Thưởng', 'bonus', 1)}
+                        {inputRow('BHXH (trừ)', 'bhxh', 1)}
+                        <tr className="bg-emerald-50 border-t-2 border-emerald-300">
+                          <td className="py-3 px-3 font-bold text-gray-900">Tổng thực nhận</td>
+                          {rows.map(({ emp, r }) => (
+                            <td key={emp.id} className="py-3 px-2 text-center font-bold text-emerald-700 text-base">{fmt(r.total)}</td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-between gap-3 text-sm">
+                  <p className="text-gray-500">
+                    Công thức: Tổng thực nhận = (Lương cứng + ăn trưa) / Tổng số ngày công tháng × Ngày công thực tế + Lương OT + Thưởng − BHXH
+                  </p>
+                  <p className="font-bold text-gray-900">
+                    Tổng quỹ lương: {fmt(rows.reduce((sum, { r }) => sum + r.total, 0))}
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Modals */}
           {editingTypeItem && (
@@ -1997,12 +2208,12 @@ export default function TaskDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <button 
               onClick={() => {
-                const today = new Date().toISOString().split('T')[0];
+                const today = localDate();
                 setFilterDateFrom(today);
                 setFilterDateTo(today);
               }}
               className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${(() => {
-                const today = new Date().toISOString().split('T')[0];
+                const today = localDate();
                 return filterDateFrom === today && filterDateTo === today ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300';
               })()}`}
             >

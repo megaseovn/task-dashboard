@@ -58,7 +58,7 @@ function SalaryInput({ value, overridden, step = 1, onCommit }) {
     onCommit(v === '' ? null : Number(v));
   };
   return (
-    <div className="flex items-center justify-center gap-1">
+    <div className="flex items-center gap-1 shrink-0">
       <input
         type="number"
         step={step}
@@ -67,7 +67,7 @@ function SalaryInput({ value, overridden, step = 1, onCommit }) {
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-        className={`w-24 px-2 py-1 text-center border rounded text-sm focus:ring-2 focus:ring-blue-500 ${overridden ? 'bg-blue-50 border-blue-300 font-semibold' : 'border-gray-200'}`}
+        className={`w-28 px-2 py-1 text-right tabular-nums border rounded text-sm focus:ring-2 focus:ring-blue-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${overridden ? 'bg-blue-50 border-blue-300 font-semibold' : 'border-gray-200'}`}
       />
       {overridden ? (
         <button title="Quay về số tự tính" onClick={() => onCommit(null)} className="text-blue-500 hover:text-blue-700 text-xs">↺</button>
@@ -1818,98 +1818,93 @@ export default function TaskDashboard() {
             const rows = salaryEmployees.map(emp => ({ emp, r: computeSalary(emp, salaryMonth) }));
             const fmt = (n) => Number(n || 0).toLocaleString('vi-VN', { maximumFractionDigits: 1 });
             const [yy, mm] = salaryMonth.split('-');
-            const save = (empId, field) => (v) => saveSalaryField(salaryMonth, empId, field, v);
+            const fund = rows.reduce((sum, { r }) => sum + r.total, 0);
 
-            const inputRow = (label, field, step, hint) => (
-              <tr className="border-b border-gray-100">
-                <td className="py-2 px-3 font-semibold text-gray-800 whitespace-nowrap">{label}</td>
-                {rows.map(({ emp, r }) => (
-                  <td key={emp.id} className="py-2 px-2 text-center">
-                    <SalaryInput
-                      value={r.values[field]}
-                      overridden={!!r.overridden[field]}
-                      step={step}
-                      onCommit={save(emp.id, field)}
-                    />
-                    {hint && <p className="text-[10px] text-gray-400 mt-0.5">{hint(r)}</p>}
-                  </td>
-                ))}
-              </tr>
+            // Một dòng trong phiếu lương: nhãn bên trái, ô số bên phải (cùng độ rộng -> thẳng cột)
+            const line = ({ emp, r, label, field, step = 1, hint }) => (
+              <div key={field} className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-100">
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-800">{label}</p>
+                  {hint && <p className="text-[11px] text-gray-400 leading-tight">{hint}</p>}
+                </div>
+                <SalaryInput
+                  value={r.values[field]}
+                  overridden={!!r.overridden[field]}
+                  step={step}
+                  onCommit={(v) => saveSalaryField(salaryMonth, emp.id, field, v)}
+                />
+              </div>
+            );
+            const section = (title) => (
+              <div key={`sec-${title}`} className="px-4 py-1.5 bg-gray-50 text-[11px] font-bold uppercase tracking-wide text-gray-500 border-b border-gray-100">{title}</div>
             );
 
             return (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 space-y-4">
-                <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="space-y-5">
+                {/* Tổng quỹ lương ở trên cùng */}
+                <div className="bg-gradient-to-r from-blue-600 to-emerald-600 rounded-xl shadow-lg p-5 text-white flex flex-wrap items-end justify-between gap-4">
                   <div>
-                    <h2 className="text-xl font-bold text-gray-900">💰 Lương tháng {mm}/{yy}</h2>
-                    <p className="text-sm text-gray-500">Đơn vị: nghìn đồng. Ô nền xanh = manager đã sửa (bấm ↺ để quay về số tự tính). Xóa trống ô = dùng số tự tính.</p>
+                    <p className="text-white/80 text-sm">💰 Tổng quỹ lương tháng {mm}/{yy}</p>
+                    <p className="text-3xl font-bold tabular-nums">{fmt(fund)} <span className="text-base font-semibold text-white/80">nghìn đồng</span></p>
+                    <p className="text-white/80 text-xs mt-1">{rows.length} nhân viên đang làm</p>
                   </div>
                   <div>
-                    <label className="text-sm font-semibold text-gray-700 mb-1 block">Tháng</label>
+                    <label className="text-white/80 text-sm mb-1 block">Tháng</label>
                     <input
                       type="month"
                       value={salaryMonth}
                       onChange={(e) => e.target.value && setSalaryMonth(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      className="px-3 py-2 rounded-lg text-sm text-gray-900 border-0 focus:ring-2 focus:ring-white"
                     />
                   </div>
                 </div>
 
+                <p className="text-xs text-gray-500">
+                  Đơn vị: nghìn đồng. Ô nền xanh = manager đã sửa (bấm ↺ để quay về số tự tính). Xóa trống ô = dùng số tự tính.
+                  Tổng thực nhận = (Lương cứng + ăn trưa) / Tổng ngày công tháng × Ngày công thực tế + Lương OT + Thưởng − BHXH.
+                </p>
+
                 {rows.length === 0 ? (
                   <p className="text-gray-500 text-sm">Chưa có nhân viên đang làm.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm border border-gray-200 rounded-lg">
-                      <thead>
-                        <tr className="bg-gray-50 border-b border-gray-200">
-                          <th className="py-3 px-3 text-left text-gray-600">Mục lục</th>
-                          {rows.map(({ emp }) => (
-                            <th key={emp.id} className="py-3 px-2 text-center font-bold text-gray-900 min-w-[130px]">{emp.name}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border-b border-gray-100">
-                          <td className="py-2 px-3 font-semibold text-gray-800">Vị trí</td>
-                          {rows.map(({ emp }) => (
-                            <td key={emp.id} className="py-2 px-2 text-center text-gray-700">
-                              {emp.position}<p className="text-[10px] text-gray-400">{emp.status}</p>
-                            </td>
-                          ))}
-                        </tr>
-                        {inputRow('Tổng số ngày công tháng', 'standardDays', 0.5, () => 'T2–T6: 1, T7: 0,5')}
-                        {inputRow('Số ngày nghỉ', 'daysOff', 0.5)}
-                        {inputRow('Ngày công thực tế', 'actualDays', 0.5, (r) => `điểm danh ${fmt(r.attended)} + phép`)}
-                        {inputRow('Ngày phép dùng', 'leaveUsed', 0.5)}
-                        {inputRow('Lương cứng + ăn trưa', 'baseSalary', 1)}
-                        <tr className="border-b border-gray-100 bg-gray-50">
-                          <td className="py-2 px-3 text-gray-600">Lương 1 ngày (tự tính)</td>
-                          {rows.map(({ emp, r }) => (
-                            <td key={emp.id} className="py-2 px-2 text-center text-gray-600">{fmt(r.dailyRate)}</td>
-                          ))}
-                        </tr>
-                        {inputRow('Lương OT', 'otPay', 1, (r) => `${fmt(r.otDays)} ngày OT`)}
-                        {inputRow('Thưởng', 'bonus', 1)}
-                        {inputRow('BHXH (trừ)', 'bhxh', 1)}
-                        <tr className="bg-emerald-50 border-t-2 border-emerald-300">
-                          <td className="py-3 px-3 font-bold text-gray-900">Tổng thực nhận</td>
-                          {rows.map(({ emp, r }) => (
-                            <td key={emp.id} className="py-3 px-2 text-center font-bold text-emerald-700 text-base">{fmt(r.total)}</td>
-                          ))}
-                        </tr>
-                      </tbody>
-                    </table>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                    {rows.map(({ emp, r }) => (
+                      <div key={emp.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                        <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-slate-50 to-blue-50">
+                          <p className="font-bold text-gray-900">{emp.name}</p>
+                          <p className="text-xs text-gray-500">{emp.position} · {emp.status}</p>
+                        </div>
+
+                        {section("Ngày công")}
+                        {line({ emp: emp, r: r, label: "Tổng số ngày công tháng", field: "standardDays", step: 0.5, hint: "T2–T6: 1 công, T7: 0,5 công", })}
+                        {line({ emp: emp, r: r, label: "Số ngày nghỉ", field: "daysOff", step: 0.5, })}
+                        {line({ emp: emp, r: r, label: "Ngày phép dùng", field: "leaveUsed", step: 0.5, })}
+                        {line({ emp, r, label: "Ngày công thực tế", field: "actualDays", step: 0.5, hint: `Điểm danh ${fmt(r.attended)} + phép` })}
+
+                        {section("Lương (nghìn đồng)")}
+                        {line({ emp: emp, r: r, label: "Lương cứng + ăn trưa", field: "baseSalary", })}
+                        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-100">
+                          <p className="text-sm text-gray-500">Lương 1 ngày (tự tính)</p>
+                          <div className="flex items-center gap-1">
+                            <span className="w-28 px-2 py-1 text-right text-sm text-gray-500 tabular-nums">{fmt(r.dailyRate)}</span>
+                            <span className="w-3" />
+                          </div>
+                        </div>
+                        {line({ emp, r, label: "Lương OT", field: "otPay", hint: `${fmt(r.otDays)} ngày OT × lương 1 ngày` })}
+                        {line({ emp: emp, r: r, label: "Thưởng", field: "bonus", })}
+                        {line({ emp: emp, r: r, label: "BHXH (trừ)", field: "bhxh", })}
+
+                        <div className="mt-auto flex items-center justify-between gap-3 px-4 py-3 bg-emerald-50 border-t-2 border-emerald-300">
+                          <p className="font-bold text-gray-900">Tổng thực nhận</p>
+                          <div className="flex items-center gap-1">
+                            <span className="w-28 px-2 text-right text-lg font-bold text-emerald-700 tabular-nums">{fmt(r.total)}</span>
+                            <span className="w-3" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-
-                <div className="flex flex-wrap justify-between gap-3 text-sm">
-                  <p className="text-gray-500">
-                    Công thức: Tổng thực nhận = (Lương cứng + ăn trưa) / Tổng số ngày công tháng × Ngày công thực tế + Lương OT + Thưởng − BHXH
-                  </p>
-                  <p className="font-bold text-gray-900">
-                    Tổng quỹ lương: {fmt(rows.reduce((sum, { r }) => sum + r.total, 0))}
-                  </p>
-                </div>
               </div>
             );
           })()}

@@ -27,7 +27,14 @@ import {
   toArray,
   saveSalaryField,
   listenToSalariesChanges,
+  setAllowedEmail,
+  createAuthAccount,
+  fetchEmployeesOnce,
 } from './firebase-service';
+import { auth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from './firebase';
+
+const normEmail = (e) => (e || '').trim().toLowerCase();
+const stripPassword = ({ password, ...rest }) => rest; // không lưu mật khẩu trong phiên đăng nhập
 
 // Ngày theo giờ máy (giờ Việt Nam), dạng YYYY-MM-DD.
 // Thay cho toISOString() vốn dùng giờ UTC -> trước 7h sáng bị lùi 1 ngày.
@@ -103,13 +110,32 @@ export default function TaskDashboard() {
   });
   
   const setCurrentUser = (user) => {
-    setCurrentUserState(user);
-    if (user) {
-      localStorage.setItem('currentUser', JSON.stringify(user));
+    const safe = user ? stripPassword(user) : null;
+    setCurrentUserState(safe);
+    if (safe) {
+      localStorage.setItem('currentUser', JSON.stringify(safe));
     } else {
       localStorage.removeItem('currentUser');
+      signOut(auth).catch(() => {});
     }
   };
+
+  // Trạng thái đăng nhập Firebase. authUid đổi -> các listener đăng ký lại để đọc được dữ liệu đã khóa.
+  const [authUid, setAuthUid] = useState(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState(null);
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setAuthUid(u ? u.uid : null);
+      if (!u) {
+        // Không còn phiên Firebase -> đăng xuất (trừ phiên cũ chưa chuyển sang bảo mật)
+        const saved = localStorage.getItem('currentUser');
+        const cur = saved ? JSON.parse(saved) : null;
+        if (cur && !cur.legacy) { setCurrentUserState(null); localStorage.removeItem('currentUser'); }
+      }
+    });
+    return () => unsub();
+  }, []);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [editingTaskId, setEditingTaskId] = useState(null);
@@ -307,7 +333,7 @@ export default function TaskDashboard() {
       localStorage.setItem('employees', JSON.stringify(remoteEmployees));
     });
     return () => unsubscribeEmployees();
-  }, []);
+  }, [authUid]);
 // ==================== LOAD INITIAL DATA FROM FIREBASE ====================
   useEffect(() => {
     const initializeData = async () => {
@@ -362,7 +388,7 @@ export default function TaskDashboard() {
       localStorage.setItem('tasks', JSON.stringify(remoteTasks));
     });
     return () => unsubscribeTasks();
-  }, []);
+  }, [authUid]);
 
   useEffect(() => {
     const unsubscribeAttendances = listenToAttendancesChanges((raw) => {
@@ -371,17 +397,8 @@ export default function TaskDashboard() {
       localStorage.setItem('attendances', JSON.stringify(remoteAttendances));
     });
     return () => unsubscribeAttendances();
-  }, []);
+  }, [authUid]);
 
-  useEffect(() => {
-    const unsubscribeCurrentUser = listenToCurrentUserChanges((remoteUser) => {
-      if (remoteUser) {
-        setCurrentUserState(remoteUser);
-        localStorage.setItem('currentUser', JSON.stringify(remoteUser));
-      }
-    });
-    return () => unsubscribeCurrentUser();
-  }, []);
 
   // ==================== LISTENERS FOR SETUP DATA ====================
   useEffect(() => {
@@ -390,7 +407,7 @@ export default function TaskDashboard() {
       localStorage.setItem('taskTypes', JSON.stringify(remoteTaskTypes));
     });
     return () => unsubscribeTaskTypes();
-  }, []);
+  }, [authUid]);
 
   useEffect(() => {
     const unsubscribeProjects = listenToProjectsChanges((remoteProjects) => {
@@ -398,7 +415,7 @@ export default function TaskDashboard() {
       localStorage.setItem('projects', JSON.stringify(remoteProjects));
     });
     return () => unsubscribeProjects();
-  }, []);
+  }, [authUid]);
 
   useEffect(() => {
     const unsubscribeWorkStatus = listenToWorkStatusChanges((remoteWorkStatus) => {
@@ -406,12 +423,12 @@ export default function TaskDashboard() {
       localStorage.setItem('workStatus', JSON.stringify(remoteWorkStatus));
     });
     return () => unsubscribeWorkStatus();
-  }, []);
+  }, [authUid]);
 
   useEffect(() => {
     const unsubscribeSalaries = listenToSalariesChanges((data) => setSalaries(data || {}));
     return () => unsubscribeSalaries();
-  }, []);
+  }, [authUid]);
   // ==================== UTILS ====================
   const today = localDate();
   
@@ -611,26 +628,111 @@ export default function TaskDashboard() {
   };
 
   // ==================== HANDLERS ====================
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const emp = employees.find(e => e.email === loginEmail && e.password === loginPassword);
-    if (emp) {
-      setCurrentUser(emp);
-      setLoginEmail('');
-      setLoginPassword('');
-    } else {
-      alert('Email hoặc password không đúng!');
+    const email = normEmail(loginEmail);
+    const pw = loginPassword;
+    const done = (emp, extra = {}) => { setCurrentUser({ ...emp, ...extra }); setLoginEmail(''); setLoginPassword(''); };
+
+    // 1. Đăng nhập bằng tài khoản bảo mật (Firebase Authentication)
+    let signedIn = false;
+    try { await signInWithEmailAndPassword(auth, email, pw); signedIn = true; } catch (err) { /* thử cách cũ bên dưới */ }
+
+    let list = null;
+    try { list = await fetchEmployeesOnce(); } catch (err) { list = null; }
+    const emp = list && list.find(x => normEmail(x.email) === email);
+
+    if (signedIn) {
+      if (!emp || emp.status === 'Đã nghỉ việc') {
+        await signOut(auth).catch(() => {});
+        alert('Tài khoản này chưa được cấp quyền truy cập. Vui lòng liên hệ quản lý.');
+        return;
+      }
+      done(emp);
+      return;
     }
+
+    // 2. Tài khoản cũ (chưa chuyển sang bảo mật): chỉ dùng được khi database chưa khóa
+    if (emp && emp.password && emp.password === pw && emp.status !== 'Đã nghỉ việc') {
+      try {
+        await createUserWithEmailAndPassword(auth, email, pw); // tự chuyển sang tài khoản bảo mật
+        await setAllowedEmail(email, true);
+        done(emp);
+      } catch (err) {
+        done(emp, { legacy: true }); // mật khẩu < 6 ký tự hoặc chưa bật Authentication
+      }
+      return;
+    }
+
+    alert('Email hoặc mật khẩu không đúng!');
   };
 
-  const handleAddEmployee = (e) => {
+  // Manager: tạo tài khoản bảo mật cho tất cả nhân viên + cấp quyền + xóa mật khẩu khỏi database
+  const handleMigrateSecurity = async () => {
+    if (!window.confirm('Tạo tài khoản đăng nhập bảo mật cho tất cả nhân viên?\nMật khẩu giữ nguyên như hiện tại.')) return;
+    setMigrating(true);
+    const results = [];
+    const updated = [];
+    for (const emp of employees) {
+      const email = normEmail(emp.email);
+      if (!email) { updated.push(emp); continue; }
+      if (emp.status === 'Đã nghỉ việc') {
+        await setAllowedEmail(email, false);
+        results.push({ name: emp.name, ok: true, msg: 'Đã nghỉ việc → khóa truy cập' });
+        updated.push(stripPassword(emp));
+        continue;
+      }
+      if (!emp.password) {
+        await setAllowedEmail(email, true);
+        results.push({ name: emp.name, ok: true, msg: 'Đã có tài khoản bảo mật' });
+        updated.push(emp);
+        continue;
+      }
+      const r = await createAuthAccount(email, emp.password);
+      if (r === 'created' || r === 'exists') {
+        await setAllowedEmail(email, true);
+        results.push({ name: emp.name, ok: true, msg: r === 'created' ? 'Đã tạo tài khoản' : 'Tài khoản đã có sẵn' });
+        updated.push(stripPassword(emp));
+      } else {
+        const msg = r === 'auth/weak-password' ? 'Mật khẩu dưới 6 ký tự → sửa nhân viên, đặt mật khẩu mới rồi chạy lại'
+          : r === 'auth/operation-not-allowed' ? 'Chưa bật Email/Password trong Firebase Authentication'
+          : r === 'auth/invalid-email' ? 'Email không hợp lệ' : `Lỗi: ${r}`;
+        results.push({ name: emp.name, ok: false, msg });
+        updated.push(emp); // giữ mật khẩu để chạy lại
+      }
+    }
+    setEmployees(updated);
+    setMigrationResult(results);
+    setMigrating(false);
+  };
+
+  const handleAddEmployee = async (e) => {
     e.preventDefault();
     if (!newEmployeeForm.name || !newEmployeeForm.email || !newEmployeeForm.password || !newEmployeeForm.position || !newEmployeeForm.status) {
       alert('Vui lòng điền đầy đủ thông tin!');
       return;
     }
+    if (newEmployeeForm.password.length < 6) {
+      alert('Mật khẩu cần ít nhất 6 ký tự.');
+      return;
+    }
+    const email = normEmail(newEmployeeForm.email);
+    if (employees.some(x => normEmail(x.email) === email)) {
+      alert('Email này đã có trong danh sách nhân viên.');
+      return;
+    }
+    const r = await createAuthAccount(email, newEmployeeForm.password);
+    if (r !== 'created' && r !== 'exists') {
+      alert(r === 'auth/operation-not-allowed'
+        ? 'Chưa bật Email/Password trong Firebase Authentication.'
+        : `Không tạo được tài khoản đăng nhập (${r}).`);
+      return;
+    }
+    if (r === 'exists') alert('Lưu ý: email này đã có tài khoản đăng nhập từ trước, mật khẩu cũ vẫn giữ nguyên.');
+    if (newEmployeeForm.status !== 'Đã nghỉ việc') await setAllowedEmail(email, true);
     const newId = Math.max(...employees.map(e => e.id), 0) + 1;
-    setEmployees([...employees, { ...newEmployeeForm, id: newId, role: 'employee' }]);
+    const { password, ...info } = newEmployeeForm; // không lưu mật khẩu vào database
+    setEmployees([...employees, { ...info, email, id: newId, role: 'employee' }]);
     setNewEmployeeForm({ name: '', position: 'Lập trình viên', status: 'Nhân viên chính thức', email: '', password: '' });
     alert('Tạo nhân viên thành công!');
   };
@@ -640,14 +742,36 @@ export default function TaskDashboard() {
     setEditEmployeeForm({
       name: emp.name,
       email: emp.email,
-      password: emp.password,
+      password: '',
       position: emp.position,
       status: emp.status,
     });
   };
 
-  const handleSaveEditEmployee = (empId) => {
-    const updatedEmployees = employees.map(e => e.id === empId ? { ...e, ...editEmployeeForm } : e);
+  const handleSaveEditEmployee = async (empId) => {
+    const old = employees.find(e => e.id === empId);
+    const { password: newPw, ...info } = editEmployeeForm;
+    info.email = normEmail(info.email);
+    const emailChanged = old && normEmail(old.email) !== info.email;
+    if (emailChanged) {
+      if (!newPw || newPw.length < 6) { alert('Đổi email cần nhập mật khẩu (ít nhất 6 ký tự) cho email mới.'); return; }
+      const r = await createAuthAccount(info.email, newPw);
+      if (r !== 'created' && r !== 'exists') { alert(`Không tạo được tài khoản cho email mới (${r}).`); return; }
+      await setAllowedEmail(old.email, false);
+    } else if (newPw && old?.password) {
+      // Tài khoản chưa chuyển sang bảo mật: cập nhật mật khẩu để lần "Kích hoạt bảo mật" sau dùng
+      if (newPw.length < 6) { alert('Mật khẩu cần ít nhất 6 ký tự.'); return; }
+      info.legacyPassword = newPw;
+    } else if (newPw) {
+      alert('Không đổi được mật khẩu trực tiếp. Hãy bấm "Gửi email đặt lại mật khẩu" để nhân viên tự đặt mật khẩu mới.');
+    }
+    // Đã nghỉ việc -> thu hồi quyền; đi làm lại -> cấp lại quyền
+    await setAllowedEmail(info.email, info.status !== 'Đã nghỉ việc');
+    const { legacyPassword, ...cleanInfo } = info;
+    const updatedEmployees = employees.map(e => e.id !== empId ? e
+      : legacyPassword ? { ...e, ...cleanInfo, password: legacyPassword }
+      : old?.password && !emailChanged ? { ...e, ...cleanInfo } // giữ mật khẩu cũ cho tới khi kích hoạt
+      : stripPassword({ ...e, ...cleanInfo }));
     setEmployees(updatedEmployees);
     localStorage.setItem('employees', JSON.stringify(updatedEmployees));
     setEditingEmployeeId(null);
@@ -1358,6 +1482,28 @@ export default function TaskDashboard() {
                       Tạo
                     </button>
                   </form>
+                  {/* Bảo mật đăng nhập: chỉ hiện khi còn nhân viên chưa chuyển sang tài khoản bảo mật */}
+                  {(employees.some(x => x.password) || migrationResult) && (
+                    <div className="mt-3 p-3 rounded-lg border border-amber-300 bg-amber-50 text-xs space-y-2">
+                      {employees.some(x => x.password) && (
+                        <>
+                          <p className="text-amber-900"><b>🔐 Bảo mật đăng nhập:</b> còn {employees.filter(x => x.password).length} tài khoản chưa chuyển sang đăng nhập bảo mật.</p>
+                          <button onClick={handleMigrateSecurity} disabled={migrating}
+                            className="w-full py-2 rounded-lg bg-amber-500 text-white font-semibold hover:bg-amber-600 disabled:opacity-60">
+                            {migrating ? 'Đang xử lý…' : 'Kích hoạt bảo mật cho tất cả'}
+                          </button>
+                        </>
+                      )}
+                      {migrationResult && (
+                        <div className="space-y-0.5">
+                          {migrationResult.map((r, i) => (
+                            <p key={i} className={r.ok ? 'text-emerald-700' : 'text-red-700'}>{r.ok ? '✅' : '❌'} {r.name}: {r.msg}</p>
+                          ))}
+                          <button onClick={() => setMigrationResult(null)} className="text-gray-500 hover:text-gray-700">Ẩn kết quả</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="mt-3 pt-3 border-t border-gray-200">
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-semibold text-gray-700">Danh sách:</p>
@@ -1386,6 +1532,7 @@ export default function TaskDashboard() {
                             <button onClick={() => {
                               if (window.confirm(`Bạn chắc chắn muốn xóa ${e.name}?`)) {
                                 const updatedEmployees = employees.filter(emp => emp.id !== e.id);
+                                setAllowedEmail(e.email, false);
                                 setEmployees(updatedEmployees);
                                 localStorage.setItem('employees', JSON.stringify(updatedEmployees));
                               }
@@ -2068,7 +2215,21 @@ export default function TaskDashboard() {
                 <div className="space-y-3 mb-4">
                   <input type="text" placeholder="Tên" value={editEmployeeForm.name} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
                   <input type="email" placeholder="Email" value={editEmployeeForm.email} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, email: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                  <input type="password" placeholder="Mật khẩu" value={editEmployeeForm.password} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, password: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  <input type="password" placeholder="Mật khẩu (chỉ cần khi đổi email)" value={editEmployeeForm.password} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, password: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await sendPasswordResetEmail(auth, normEmail(editEmployeeForm.email));
+                        alert(`Đã gửi email đặt lại mật khẩu tới ${editEmployeeForm.email}`);
+                      } catch (err) {
+                        alert(`Không gửi được email (${err.code || err.message}).`);
+                      }
+                    }}
+                    className="w-full text-sm text-blue-600 hover:text-blue-800 text-left"
+                  >
+                    🔑 Gửi email đặt lại mật khẩu cho nhân viên này
+                  </button>
                   <select value={editEmployeeForm.position} onChange={(e) => setEditEmployeeForm({ ...editEmployeeForm, position: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                     {positionOptions.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>

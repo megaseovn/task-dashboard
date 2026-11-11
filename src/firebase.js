@@ -1,5 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, update, remove, onValue } from 'firebase/database';
+import {
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signOut, onAuthStateChanged, sendPasswordResetEmail
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyC4LFkBBoxfBV8171j42ltGRTUlBV1rqcM",
@@ -16,6 +20,13 @@ const app = initializeApp(firebaseConfig);
 
 // Get reference to the database service
 export const db = getDatabase(app);
+
+// Đăng nhập (Firebase Authentication)
+export const auth = getAuth(app);
+// App phụ: dùng để tạo tài khoản cho nhân viên mà manager KHÔNG bị đăng xuất
+const secondaryApp = initializeApp(firebaseConfig, 'secondary');
+export const secondaryAuth = getAuth(secondaryApp);
+export { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail };
 
 // Helper functions for database operations
 export const dbRef = ref;

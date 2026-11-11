@@ -311,3 +311,42 @@ export const listenToSalariesChanges = (callback) => {
   });
   return unsubscribe;
 };
+
+// ==================== BẢO MẬT: TÀI KHOẢN & QUYỀN TRUY CẬP ====================
+import { auth, secondaryAuth, createUserWithEmailAndPassword, signOut as fbSignOut } from './firebase';
+
+// Email làm khóa trong database (Firebase không cho dấu '.' trong khóa)
+export const emailKey = (email) => (email || '').trim().toLowerCase().replace(/\./g, ',');
+
+// Cấp / thu hồi quyền xem dữ liệu cho 1 email (chỉ manager ghi được)
+export const setAllowedEmail = async (email, allowed) => {
+  if (!email) return false;
+  try {
+    await dbSet(dbRef(db, `allowedEmails/${emailKey(email)}`), allowed ? true : null);
+    return true;
+  } catch (error) {
+    console.error('Error setting allowed email:', error);
+    return false;
+  }
+};
+
+// Tạo tài khoản đăng nhập cho nhân viên (dùng app phụ để manager không bị đăng xuất)
+// Trả về: 'created' | 'exists' | mã lỗi (vd 'auth/weak-password')
+export const createAuthAccount = async (email, password) => {
+  try {
+    await createUserWithEmailAndPassword(secondaryAuth, email.trim().toLowerCase(), password);
+    await fbSignOut(secondaryAuth);
+    return 'created';
+  } catch (error) {
+    if (error.code === 'auth/email-already-in-use') return 'exists';
+    return error.code || 'error';
+  }
+};
+
+// Đọc danh sách nhân viên 1 lần (dùng khi đăng nhập)
+export const fetchEmployeesOnce = async () => {
+  const snapshot = await dbGet(dbRef(db, 'employees'));
+  return snapshot.exists() ? toArray(snapshot.val()) : [];
+};
+
+export { auth };

@@ -1,0 +1,38 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "allowedEmails": {
+      ".read": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    },
+    "employees": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    },
+    "tasks": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true"
+    },
+    "attendances": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true"
+    },
+    "taskTypes": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    },
+    "projects": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    },
+    "workStatus": {
+      ".read": "auth != null && root.child('allowedEmails').child(auth.token.email.toLowerCase().replace('.', ',')).val() == true",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    },
+    "salaries": {
+      ".read": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'",
+      ".write": "auth != null && auth.token.email.toLowerCase() == 'hoangducthien.3112@gmail.com'"
+    }
+  }
+}

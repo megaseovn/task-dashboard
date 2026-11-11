@@ -153,6 +153,8 @@ export default function TaskDashboard() {
   const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
   const [expandedAttendance, setExpandedAttendance] = useState({});
   const [dayPicker, setDayPicker] = useState(null); // { userId, name, date, current }
+  const [historyTask, setHistoryTask] = useState(null); // task đang xem lịch sử thêm/sửa
+  const [cardPanel, setCardPanel] = useState({}); // thẻ task nhân viên: { '<id>:links' | '<id>:comments': true }
 
   const [employees, setEmployeesState] = useState(() => {
     const saved = localStorage.getItem('employees');
@@ -214,7 +216,38 @@ export default function TaskDashboard() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const setTasks = (data) => {
+  // Nhân viên thêm/sửa task KHÔNG thuộc hôm nay -> ghi lịch sử vào task (manager xem được)
+  const TRACKED_FIELDS = { title: 'Tiêu đề', type: 'Loại', project: 'Dự án', status: 'Trạng thái', deadline: 'Hạn', wordCount: 'Số từ' };
+  const trackEmployeeEdits = (prev, next) => {
+    if (currentUser?.role !== 'employee') return next;
+    const todayStr = localDate();
+    const prevMap = new Map(prev.map(t => [t.id, t]));
+    const at = new Date().toISOString();
+    const by = currentUser.name;
+    return next.map(t => {
+      const old = prevMap.get(t.id);
+      if (!old) {
+        if (!t.deadline || t.deadline === todayStr) return t;
+        return { ...t, history: [{ at, by, action: 'add', deadline: t.deadline, changes: [] }] };
+      }
+      if (old.deadline === todayStr && t.deadline === todayStr) return t;
+      const changes = [];
+      Object.entries(TRACKED_FIELDS).forEach(([k, label]) => {
+        const a = k === 'wordCount' ? Number(old[k] || 0) : (old[k] ?? '');
+        const b = k === 'wordCount' ? Number(t[k] || 0) : (t[k] ?? '');
+        if (String(a) !== String(b)) changes.push({ field: label, from: String(a), to: String(b) });
+      });
+      const ol = (old.links || []).map(l => l.url);
+      const nl = (t.links || []).map(l => l.url);
+      nl.filter(u => !ol.includes(u)).forEach(u => changes.push({ field: 'Thêm link', to: u }));
+      ol.filter(u => !nl.includes(u)).forEach(u => changes.push({ field: 'Xóa link', from: u }));
+      if (changes.length === 0) return t; // vd chỉ thêm comment -> không ghi
+      return { ...t, history: [...(old.history || []), { at, by, action: 'edit', changes }] };
+    });
+  };
+
+  const setTasks = (input) => {
+    const data = trackEmployeeEdits(tasks, input);
     const { upserts, deleteIds } = diffById(tasks, data);
     setTasksState(data);
     localStorage.setItem('tasks', JSON.stringify(data));
@@ -1663,6 +1696,15 @@ export default function TaskDashboard() {
                                   <p className="font-medium text-gray-900 leading-snug">
                                     {task.title}
                                     {overdue && <AlertTriangle className="inline w-3.5 h-3.5 text-red-600 ml-1 -mt-0.5" />}
+                                    {task.history?.length > 0 && (
+                                      <button
+                                        onClick={() => setHistoryTask(task)}
+                                        title="Nhân viên thêm/sửa task không đúng ngày – bấm để xem"
+                                        className="ml-1.5 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                      >
+                                        ✍️ {task.history.length}
+                                      </button>
+                                    )}
                                   </p>
                                   <p className="text-xs text-gray-400 mt-0.5">📁 {task.project || '–'}</p>
                                 </td>
@@ -2113,9 +2155,62 @@ export default function TaskDashboard() {
             );
           })()}
 
+          {/* Lịch sử thêm/sửa task không đúng ngày (manager) */}
+          {historyTask && (() => {
+            const t = tasks.find(x => x.id === historyTask.id) || historyTask;
+            const fmtAt = (iso) => {
+              const d = new Date(iso);
+              const p2 = (n) => String(n).padStart(2, '0');
+              return `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+            };
+            const dmy = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v.split('-').reverse().join('/') : v;
+            const show = (c, v) => v === '' || v === undefined ? '(trống)'
+              : c.field === 'Hạn' ? dmy(v)
+              : c.field === 'Số từ' ? Number(v).toLocaleString('vi-VN') : v;
+            const entries = [...(t.history || [])].reverse();
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4" onClick={() => setHistoryTask(null)}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                  <div className="px-5 py-4 border-b border-gray-200 flex justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">✍️ Lịch sử thêm/sửa không đúng ngày</p>
+                      <h3 className="font-bold text-gray-900 leading-snug">{t.title}</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">Hạn: {dmy(t.deadline)} · {t.assignee ? getUserName(t.assignee) : '–'}</p>
+                    </div>
+                    <button onClick={() => setHistoryTask(null)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
+                  </div>
+                  <div className="overflow-y-auto px-5 py-3 space-y-3">
+                    {entries.map((h, i) => (
+                      <div key={i} className="border-l-4 border-amber-300 pl-3">
+                        <p className="text-sm">
+                          <b className={h.action === 'add' ? 'text-blue-700' : 'text-amber-700'}>{h.action === 'add' ? 'Thêm task' : 'Sửa task'}</b>
+                          <span className="text-gray-500"> · {fmtAt(h.at)} · {h.by}</span>
+                        </p>
+                        {h.action === 'add' ? (
+                          <p className="text-xs text-gray-600 mt-0.5">Task có hạn {dmy(h.deadline || t.deadline)} nhưng được thêm ngày {fmtAt(h.at).slice(0, 10)}</p>
+                        ) : (
+                          <ul className="text-xs text-gray-700 mt-1 space-y-0.5">
+                            {h.changes.map((c, j) => (
+                              <li key={j} className="break-all">
+                                <span className="font-semibold">{c.field}:</span>{' '}
+                                {c.field === 'Thêm link' ? <a href={c.to} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{c.to}</a>
+                                  : c.field === 'Xóa link' ? <span className="line-through text-gray-500">{c.from}</span>
+                                  : <><span className="text-gray-500 line-through">{show(c, c.from)}</span> → <span className="font-semibold">{show(c, c.to)}</span></>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Chọn loại điểm danh cho 1 ngày (manager) */}
           {dayPicker && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setDayPicker(null)}>
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4" onClick={() => setDayPicker(null)}>
               <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
                 <h3 className="text-lg font-bold text-gray-900">📅 {dayPicker.name}</h3>
                 <p className="text-sm text-gray-500 mb-4">
@@ -2527,107 +2622,140 @@ export default function TaskDashboard() {
               <h3 className="font-bold text-gray-900 mb-3 text-sm">{status}</h3>
               <div className="space-y-2">
                 {userTasks.filter(t => t.status === status).map(task => (
-                  <div key={task.id} className={`bg-white rounded-lg p-3 shadow-sm border-l-4 ${isOverdue(task.deadline, task.status) ? 'border-red-500 bg-red-50' : 'border-blue-500'}`}>
-                    <h4 className="font-semibold text-gray-900 text-xs mb-2">{task.title} {isOverdue(task.deadline, task.status) && <AlertTriangle className="inline w-3 h-3 text-red-600" />}</h4>
-                    <div className="text-xs text-gray-600 space-y-1 mb-2">
-                      <p>📂 {task.project}</p>
-                      <p>📋 {task.type}</p>
-                      <p>📅 {task.deadline}</p>
-                      {task.wordCount && <p>📝 {task.wordCount} từ</p>}
-                    </div>
+                  <div key={task.id} className={`bg-white rounded-lg p-2.5 shadow-sm border-l-4 ${isOverdue(task.deadline, task.status) ? 'border-red-500 bg-red-50' : 'border-blue-500'}`}>
+                    {(() => {
+                      const words = parseInt(task.wordCount || 0);
+                      const links = task.links || [];
+                      const comments = task.comments || [];
+                      const done = status === 'Hoàn thành';
+                      const linkOpen = !!cardPanel[`${task.id}:links`];
+                      const cmtOpen = !!cardPanel[`${task.id}:comments`];
+                      const toggle = (k) => setCardPanel(p => ({ ...p, [`${task.id}:${k}`]: !p[`${task.id}:${k}`] }));
+                      const iconBtn = (on) => `px-1.5 py-0.5 rounded text-xs ${on ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`;
+                      const last = comments[comments.length - 1];
+                      return (
+                        <>
+                          {/* Tiêu đề + số từ */}
+                          <div className="flex items-start justify-between gap-2">
+                            <h4 className="font-semibold text-gray-900 text-[13px] leading-snug">
+                              {task.title} {isOverdue(task.deadline, task.status) && <AlertTriangle className="inline w-3 h-3 text-red-600" />}
+                            </h4>
+                            {words > 0 && editWordCountTaskId !== task.id && (
+                              <span className="shrink-0 text-[11px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded tabular-nums">{words.toLocaleString('vi-VN')} từ</span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-gray-500 mt-0.5 truncate" title={`${task.project} · ${task.type} · ${task.deadline}`}>
+                            📁 {task.project} · {task.type} · 📅 {(task.deadline || '').split('-').reverse().slice(0, 2).join('/')}
+                          </p>
 
-                    {status !== 'Hoàn thành' && (
-                      <button
-                        onClick={() => handleQuickComplete(task.id)}
-                        className="w-full mb-2 bg-emerald-600 text-white py-1 rounded text-xs font-semibold hover:bg-emerald-700 flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle className="w-3 h-3" /> Hoàn thành
-                      </button>
-                    )}
-
-                    {status === 'Hoàn thành' && (
-                      <div className="mb-2 space-y-1">
-                        <div>
-                          <label className="text-xs text-gray-600">Số từ:</label>
-                          {editWordCountTaskId === task.id ? (
-                            <div className="flex gap-1">
+                          {/* Sửa số từ (inline) */}
+                          {editWordCountTaskId === task.id && (
+                            <div className="flex gap-1 mt-1.5">
                               <input
                                 type="number"
+                                autoFocus
+                                placeholder="Số từ"
                                 value={editWordCountValue}
                                 onChange={(e) => setEditWordCountValue(e.target.value)}
-                                className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                                onKeyDown={(e) => { if (e.key === 'Enter') handleUpdateWordCount(task.id, editWordCountValue); if (e.key === 'Escape') setEditWordCountTaskId(null); }}
+                                className="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
                               />
-                              <button onClick={() => handleUpdateWordCount(task.id, editWordCountValue)} className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs">💾</button>
-                            </div>
-                          ) : (
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-semibold text-gray-900">{task.wordCount}</span>
-                              <button onClick={() => { setEditWordCountTaskId(task.id); setEditWordCountValue(task.wordCount); }} className="text-blue-600 hover:text-blue-700 text-xs">✏️</button>
+                              <button onClick={() => handleUpdateWordCount(task.id, editWordCountValue)} className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs">Lưu</button>
+                              <button onClick={() => setEditWordCountTaskId(null)} className="px-1.5 text-gray-400 hover:text-gray-700 text-xs">✕</button>
                             </div>
                           )}
-                        </div>
 
-                        <div>
-                          <label className="text-xs text-gray-600 block mb-1">Links công việc:</label>
-                          {task.links && task.links.length > 0 && (
-                            <div className="space-y-1 mb-2">
-                              {task.links.map((link, idx) => (
-                                <div key={idx} className="flex items-center gap-1">
-                                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 text-blue-600 hover:text-blue-700 text-xs truncate">
-                                    🔗 {link.url.substring(0, 20)}...
-                                  </a>
-                                  <button onClick={() => handleDeleteLink(task.id, idx)} className="text-red-600 hover:text-red-700 text-xs">✕</button>
-                                </div>
+                          {/* Link: số thứ tự gọn */}
+                          {links.length > 0 && !linkOpen && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {links.map((link, idx) => (
+                                <a key={idx} href={link.url} target="_blank" rel="noopener noreferrer" title={link.url}
+                                  className="h-5 px-1.5 inline-flex items-center rounded bg-gray-100 text-gray-600 text-[11px] font-semibold hover:bg-blue-600 hover:text-white">
+                                  🔗 {idx + 1}
+                                </a>
                               ))}
                             </div>
                           )}
-                          <div className="flex gap-1">
-                            <input
-                              type="url"
-                              placeholder="Thêm link"
-                              value={newLinkInput[task.id] || ''}
-                              onChange={(e) => setNewLinkInput({ ...newLinkInput, [task.id]: e.target.value })}
-                              className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                            />
-                            <button onClick={() => handleAddLink(task.id)} className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-xs">+</button>
+                          {linkOpen && (
+                            <div className="mt-1.5 space-y-1">
+                              {links.map((link, idx) => (
+                                <div key={idx} className="flex items-center gap-1">
+                                  <a href={link.url} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-0 text-blue-600 hover:underline text-[11px] truncate">🔗 {link.url}</a>
+                                  <button onClick={() => handleDeleteLink(task.id, idx)} title="Xóa link" className="text-red-500 hover:text-red-700 text-xs">✕</button>
+                                </div>
+                              ))}
+                              <div className="flex gap-1">
+                                <input
+                                  type="url"
+                                  placeholder="Dán link công việc…"
+                                  value={newLinkInput[task.id] || ''}
+                                  onChange={(e) => setNewLinkInput({ ...newLinkInput, [task.id]: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddLink(task.id); }}
+                                  className="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                                />
+                                <button onClick={() => handleAddLink(task.id)} className="px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 text-xs">+</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Comment: chỉ hiện comment mới nhất, bấm 💬 để xem hết */}
+                          {last && !cmtOpen && (
+                            <button onClick={() => toggle('comments')} className="block w-full text-left mt-1.5 text-[11px] text-gray-600 bg-gray-50 rounded px-1.5 py-1 truncate hover:bg-gray-100">
+                              💬 <b className="text-gray-700">{last.user}:</b> {last.text}
+                            </button>
+                          )}
+                          {cmtOpen && (
+                            <div className="mt-1.5 space-y-1">
+                              <div className="bg-gray-50 rounded p-1.5 max-h-28 overflow-y-auto text-[11px] space-y-1">
+                                {comments.length === 0 ? <p className="text-gray-400">Chưa có comment</p> : comments.map((c, i) => (
+                                  <p key={i}><b className="text-gray-700">{c.user}:</b> <span className="text-gray-600">{c.text}</span></p>
+                                ))}
+                              </div>
+                              <div className="flex gap-1">
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  placeholder="Viết comment…"
+                                  value={commentText[task.id] || ''}
+                                  onChange={(e) => setCommentText({ ...commentText, [task.id]: e.target.value })}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') handleAddComment(task.id); }}
+                                  className="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
+                                />
+                                <button onClick={() => handleAddComment(task.id)} className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                  <Send className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Hàng nút */}
+                          <div className="flex items-center gap-0.5 mt-2 pt-1.5 border-t border-gray-100">
+                            {!done && (
+                              <button onClick={() => handleQuickComplete(task.id)}
+                                className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[11px] font-semibold hover:bg-emerald-700 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" /> Xong
+                              </button>
+                            )}
+                            <div className="ml-auto flex items-center gap-0.5">
+                              {done && (
+                                <button title="Sửa số từ" onClick={() => { setEditWordCountTaskId(task.id); setEditWordCountValue(task.wordCount || ''); }}
+                                  className={iconBtn(editWordCountTaskId === task.id)}>📝</button>
+                              )}
+                              {done && (
+                                <button title="Link công việc" onClick={() => toggle('links')} className={iconBtn(linkOpen)}>
+                                  🔗{links.length > 0 ? ` ${links.length}` : '+'}
+                                </button>
+                              )}
+                              <button title="Comment" onClick={() => toggle('comments')} className={iconBtn(cmtOpen)}>
+                                💬{comments.length > 0 ? ` ${comments.length}` : ''}
+                              </button>
+                              <button title="Sửa task" onClick={() => handleOpenEditTask(task)} className={iconBtn(false)}>✏️</button>
+                              <button title="Xóa task" onClick={() => handleDeleteTask(task.id)} className="px-1.5 py-0.5 rounded text-xs text-gray-500 hover:bg-red-50">🗑️</button>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Comments */}
-                    <div className="bg-gray-50 rounded p-1 mb-2 max-h-16 overflow-y-auto text-xs">
-                      {task.comments && task.comments.length > 0 ? (
-                        task.comments.map((c, i) => (
-                          <div key={i} className="mb-1">
-                            <p className="font-semibold text-gray-700">{c.user}</p>
-                            <p className="text-gray-600 text-xs">{c.text}</p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-gray-500">Chưa comment</p>
-                      )}
-                    </div>
-
-                    {/* Add Comment */}
-                    <div className="flex gap-1 mb-2">
-                      <input
-                        type="text"
-                        placeholder="Comment..."
-                        value={commentText[task.id] || ''}
-                        onChange={(e) => setCommentText({ ...commentText, [task.id]: e.target.value })}
-                        className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:ring-1 focus:ring-blue-500"
-                      />
-                      <button onClick={() => handleAddComment(task.id)} className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        <Send className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-1 pt-1 border-t border-gray-200">
-                      <button onClick={() => handleOpenEditTask(task)} className="flex-1 text-blue-600 hover:text-blue-700 font-semibold text-xs py-1 rounded hover:bg-blue-50">✏️</button>
-                      <button onClick={() => handleDeleteTask(task.id)} className="flex-1 text-red-600 hover:text-red-700 font-semibold text-xs py-1 rounded hover:bg-red-50">🗑️</button>
-                    </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>

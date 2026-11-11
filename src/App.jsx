@@ -432,7 +432,7 @@ export default function TaskDashboard() {
   };
 
   const isOverdue = (deadline, status) => {
-    return new Date(deadline) < new Date() && status !== 'Hoàn thành';
+    return !!deadline && deadline < localDate() && status !== 'Hoàn thành'; // quá hạn = đã qua ngày hạn
   };
 
   const getTasksForDate = (dateStr, userId) => {
@@ -1398,155 +1398,163 @@ export default function TaskDashboard() {
                 </div>
               </div>
 
-              {/* Filter Tasks */}
-              <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">🔍 Lọc Tasks</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                  <select
-                    value={filterEmployee}
-                    onChange={(e) => setFilterEmployee(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">Nhân viên: Tất cả</option>
-                    {employees
-                      .filter(e => e.role === 'employee' && (showAllFilterEmployees || e.status !== 'Đã nghỉ việc'))
-                      .sort((a, b) => {
-                        const aQuit = a.status === 'Đã nghỉ việc' ? 1 : 0;
-                        const bQuit = b.status === 'Đã nghỉ việc' ? 1 : 0;
-                        return aQuit - bQuit;
-                      })
-                      .map(e => (
-                        <option key={e.id} value={e.id}>
-                          {e.status === 'Đã nghỉ việc' ? `❌ ${e.name}` : e.name}
-                        </option>
-                      ))}
-                  </select>
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer whitespace-nowrap">
-                    <input
-                      type="checkbox"
-                      checked={showAllFilterEmployees}
-                      onChange={(e) => setShowAllFilterEmployees(e.target.checked)}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-gray-600">Cả đã nghỉ</span>
-                  </label>
-                  <select
-                    value={filterPosition}
-                    onChange={(e) => setFilterPosition(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">Vị trí: Tất cả</option>
-                    {positionOptions.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <select
-                    value={filterProject}
-                    onChange={(e) => setFilterProject(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">Dự án: Tất cả</option>
-                    {projects.map(p => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="all">Trạng thái: Tất cả</option>
-                    {workStatus.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <input
-                    type="date"
-                    value={filterDateFrom}
-                    onChange={(e) => setFilterDateFrom(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  />
-                  <input
-                    type="date"
-                    value={filterDateTo}
-                    onChange={(e) => setFilterDateTo(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
+              {/* Tasks: bộ lọc + bảng trong 1 khung */}
+              {(() => {
+                const sel = "h-9 pl-3 pr-8 border border-gray-200 rounded-lg text-sm bg-white hover:border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+                const active = (v) => v !== 'all' ? ' border-blue-400 bg-blue-50 text-blue-800' : '';
+                const toStr = (d) => localDate(d);
+                const now = new Date();
+                const todayStr = localDate();
+                const monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+                const ranges = [
+                  ['Hôm nay', todayStr, todayStr],
+                  ['Tuần này', toStr(monday), todayStr],
+                  ['Tháng này', toStr(new Date(now.getFullYear(), now.getMonth(), 1)), todayStr],
+                  ['Tất cả', '', ''],
+                ];
+                const hasFilter = filterEmployee !== 'all' || filterPosition !== 'all' || filterProject !== 'all' || filterStatus !== 'all';
+                const totalWords = filteredTasks.reduce((sum, task) => sum + parseInt(task.wordCount || 0), 0);
+                const ddmm = (d) => d ? d.split('-').reverse().slice(0, 2).join('/') : '–';
 
-              {/* Tasks Table */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center flex-wrap gap-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">📋 Tasks ({filteredTasks.length})</h3>
-                    <p className="text-sm text-gray-600">📝 Tổng từ: {filteredTasks.reduce((sum, task) => sum + parseInt(task.wordCount || 0), 0).toLocaleString()}</p>
+                return (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    {/* Tiêu đề + nút xuất */}
+                    <div className="px-5 pt-4 pb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-baseline gap-3">
+                        <h3 className="text-lg font-bold text-gray-900">📋 Tasks</h3>
+                        <span className="text-sm text-gray-500"><b className="text-gray-900">{filteredTasks.length}</b> task · <b className="text-gray-900">{totalWords.toLocaleString('vi-VN')}</b> từ</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={handleExportExcel} title="Xuất file Excel (.xlsx)"
+                          className="h-9 px-3 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold text-sm">📥 Excel</button>
+                        <button onClick={handleCopyCSV} title="Copy CSV để paste vào Google Sheet"
+                          className="h-9 px-3 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold text-sm">📋 Copy CSV</button>
+                      </div>
+                    </div>
+
+                    {/* Hàng 1: khoảng thời gian */}
+                    <div className="px-5 pb-2 flex flex-wrap items-center gap-2">
+                      <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                        {ranges.map(([label, f, t]) => {
+                          const on = filterDateFrom === f && filterDateTo === t;
+                          return (
+                            <button key={label} onClick={() => { setFilterDateFrom(f); setFilterDateTo(t); }}
+                              className={`h-9 px-3 text-sm font-semibold border-r last:border-r-0 border-gray-200 ${on ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center h-9 border border-gray-200 rounded-lg px-2 gap-1 text-sm">
+                        <span className="text-gray-400">📅</span>
+                        <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="border-0 p-0 text-sm focus:ring-0 bg-transparent" />
+                        <span className="text-gray-400">→</span>
+                        <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="border-0 p-0 text-sm focus:ring-0 bg-transparent" />
+                      </div>
+                    </div>
+
+                    {/* Hàng 2: lọc theo người / dự án / trạng thái */}
+                    <div className="px-5 pb-4 flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <select value={filterEmployee} onChange={(e) => setFilterEmployee(e.target.value)} className={sel + active(filterEmployee)}>
+                          <option value="all">👤 Mọi nhân viên</option>
+                          {employees
+                            .filter(e => e.role === 'employee' && (showAllFilterEmployees || e.status !== 'Đã nghỉ việc'))
+                            .sort((a, b) => (a.status === 'Đã nghỉ việc' ? 1 : 0) - (b.status === 'Đã nghỉ việc' ? 1 : 0))
+                            .map(e => (
+                              <option key={e.id} value={e.id}>{e.status === 'Đã nghỉ việc' ? `❌ ${e.name}` : e.name}</option>
+                            ))}
+                        </select>
+                        <label title="Hiện cả nhân viên đã nghỉ trong danh sách" className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer px-1 whitespace-nowrap">
+                          <input type="checkbox" checked={showAllFilterEmployees} onChange={(e) => setShowAllFilterEmployees(e.target.checked)} className="w-3.5 h-3.5" />
+                          đã nghỉ
+                        </label>
+                      </div>
+                      <select value={filterPosition} onChange={(e) => setFilterPosition(e.target.value)} className={sel + active(filterPosition)}>
+                        <option value="all">📍 Mọi vị trí</option>
+                        {positionOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className={sel + active(filterProject)}>
+                        <option value="all">📁 Mọi dự án</option>
+                        {projects.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={sel + active(filterStatus)}>
+                        <option value="all">🏷️ Mọi trạng thái</option>
+                        {workStatus.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      {hasFilter && (
+                        <button onClick={() => { setFilterEmployee('all'); setFilterPosition('all'); setFilterProject('all'); setFilterStatus('all'); }}
+                          className="h-9 px-2 text-sm text-gray-500 hover:text-red-600">✕ Xóa lọc</button>
+                      )}
+                    </div>
+
+                    {/* Bảng */}
+                    <div className="overflow-x-auto border-t border-gray-100">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                          <tr>
+                            <th className="px-5 py-2.5 text-left font-semibold">Công việc</th>
+                            <th className="px-3 py-2.5 text-left font-semibold">Loại</th>
+                            <th className="px-3 py-2.5 text-left font-semibold">Nhân viên</th>
+                            <th className="px-3 py-2.5 text-left font-semibold">Trạng thái</th>
+                            <th className="px-3 py-2.5 text-left font-semibold">Hạn</th>
+                            <th className="px-3 py-2.5 text-right font-semibold">Số từ</th>
+                            <th className="px-3 py-2.5 text-left font-semibold">Link</th>
+                            <th className="px-3 py-2.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {filteredTasks.length === 0 && (
+                            <tr><td colSpan={8} className="px-5 py-10 text-center text-gray-400">Không có task nào khớp bộ lọc</td></tr>
+                          )}
+                          {filteredTasks.map(task => {
+                            const overdue = isOverdue(task.deadline, task.status);
+                            const words = parseInt(task.wordCount || 0);
+                            return (
+                              <tr key={task.id} className={`group ${overdue ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-gray-50'}`}>
+                                <td className="px-5 py-2.5 min-w-[220px] max-w-[340px]">
+                                  <p className="font-medium text-gray-900 leading-snug">
+                                    {task.title}
+                                    {overdue && <AlertTriangle className="inline w-3.5 h-3.5 text-red-600 ml-1 -mt-0.5" />}
+                                  </p>
+                                  <p className="text-xs text-gray-400 mt-0.5">📁 {task.project || '–'}</p>
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  <span className="inline-block bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded-full">{task.type || '–'}</span>
+                                </td>
+                                <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{task.assignee ? getUserName(task.assignee) : '–'}</td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${statusColorMap[task.status] || 'bg-gray-100 text-gray-700'}`}>{task.status}</span>
+                                </td>
+                                <td className={`px-3 py-2.5 whitespace-nowrap tabular-nums ${overdue ? 'text-red-600 font-semibold' : 'text-gray-600'}`} title={task.deadline}>{ddmm(task.deadline)}</td>
+                                <td className={`px-3 py-2.5 text-right tabular-nums whitespace-nowrap ${words ? 'font-semibold text-gray-900' : 'text-gray-300'}`}>
+                                  {words ? words.toLocaleString('vi-VN') : '–'}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap">
+                                  {task.links && task.links.length > 0 ? (
+                                    <div className="flex gap-1">
+                                      {task.links.map((link, idx) => (
+                                        <a key={idx} href={link.url} target="_blank" rel="noopener noreferrer" title={link.url}
+                                          className="w-6 h-6 inline-flex items-center justify-center rounded-md bg-gray-100 text-gray-600 text-xs font-semibold hover:bg-blue-600 hover:text-white">
+                                          {idx + 1}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  ) : <span className="text-gray-300">–</span>}
+                                </td>
+                                <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                                  <button onClick={() => handleOpenEditTask(task)} title="Sửa" className="p-1 rounded hover:bg-blue-100">✏️</button>
+                                  <button onClick={() => handleDeleteTask(task.id)} title="Xóa" className="p-1 rounded hover:bg-red-100">🗑️</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleExportExcel}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-sm flex items-center gap-2 transition-colors"
-                      title="Xuất file Excel (.xlsx)"
-                    >
-                      📥 Xuất Excel
-                    </button>
-                    <button
-                      onClick={handleCopyCSV}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold text-sm flex items-center gap-2 transition-colors"
-                      title="Copy CSV để paste vào Google Sheet"
-                    >
-                      📋 Copy CSV
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs sm:text-sm">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Tiêu đề</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Loại</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Dự án</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Nhân viên</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Trạng thái</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Hạn</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Số từ</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Links</th>
-                        <th className="px-4 py-2 text-left font-semibold text-gray-700">Hành động</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {filteredTasks.map(task => (
-                        <tr key={task.id} className={isOverdue(task.deadline, task.status) ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}>
-                          <td className="px-4 py-2 text-gray-900 font-medium">{task.title} {isOverdue(task.deadline, task.status) && <AlertTriangle className="inline w-4 h-4 text-red-600 ml-1" />}</td>
-                          <td className="px-4 py-2 text-xs"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded">{task.type}</span></td>
-                          <td className="px-4 py-2 text-gray-600">{task.project}</td>
-                          <td className="px-4 py-2 text-gray-600">{task.assignee ? getUserName(task.assignee) : '-'}</td>
-                          <td className="px-4 py-2"><span className={`px-2 py-1 rounded text-xs font-semibold ${statusColorMap[task.status] || 'bg-gray-100'}`}>{task.status}</span></td>
-                          <td className="px-4 py-2 text-gray-600">{task.deadline}</td>
-                          <td className="px-4 py-2 font-semibold text-blue-700">{task.wordCount || '0'} từ</td>
-                          <td className="px-4 py-2 text-xs">
-                            {task.links && task.links.length > 0 ? (
-                              <div className="space-y-1">
-                                {task.links.map((link, idx) => (
-                                  <a
-                                    key={idx}
-                                    href={link.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 break-all"
-                                  >
-                                    🔗 Link {idx + 1}
-                                  </a>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 space-x-1">
-                            <button onClick={() => handleOpenEditTask(task)} className="text-blue-600 hover:text-blue-700">✏️</button>
-                            <button onClick={() => handleDeleteTask(task.id)} className="text-red-600 hover:text-red-700">🗑️</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                );
+              })()}
             </>
           )}
 

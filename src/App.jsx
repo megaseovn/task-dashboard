@@ -53,8 +53,8 @@ const diffById = (prev, next) => {
   return { upserts, deleteIds };
 };
 
-// Thu nhỏ ảnh QR trước khi lưu (cạnh dài tối đa 600px) để database nhẹ
-const resizeImageToDataUrl = (file, max = 600) => new Promise((resolve, reject) => {
+// Thu nhỏ ảnh QR trước khi lưu (cạnh dài tối đa 1000px): vẫn nét để quét, database vẫn nhẹ
+const resizeImageToDataUrl = (file, max = 1000) => new Promise((resolve, reject) => {
   const url = URL.createObjectURL(file);
   const img = new Image();
   img.onload = () => {
@@ -2188,33 +2188,31 @@ export default function TaskDashboard() {
                             } catch (err) { alert(err.message); }
                           };
                           return (
-                            <div className="px-4 py-3 border-t border-gray-200 flex items-center gap-3">
+                            <div className="px-4 py-4 border-t border-gray-200 flex flex-col items-center text-center">
                               <input id={inputId} type="file" accept="image/*" className="hidden" onChange={onPick} />
                               {qr ? (
-                                <button onClick={() => setQrPreview({ name: emp.name, src: qr, amount: amountVnd })} title="Bấm để phóng to"
-                                  className="shrink-0 w-24 h-24 rounded-lg border border-gray-200 bg-white p-1 hover:ring-2 hover:ring-blue-400">
-                                  <img src={qr} alt={`QR ${emp.name}`} className="w-full h-full object-contain" />
+                                <button onClick={() => setQrPreview({ name: emp.name, src: qr, amount: amountVnd })} title="Bấm để phóng to toàn màn hình"
+                                  className="w-full max-w-[280px] rounded-xl border border-gray-200 bg-white p-2 hover:ring-2 hover:ring-blue-400">
+                                  <img src={qr} alt={`QR ${emp.name}`} className="w-full h-auto object-contain" />
                                 </button>
                               ) : (
                                 <label htmlFor={inputId}
-                                  className="shrink-0 w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-600 flex flex-col items-center justify-center text-xs cursor-pointer">
-                                  <Plus className="w-5 h-5" />
-                                  Thêm QR
+                                  className="w-full max-w-[280px] aspect-square rounded-xl border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-600 flex flex-col items-center justify-center gap-1 text-sm cursor-pointer">
+                                  <Plus className="w-8 h-8" />
+                                  Thêm ảnh QR nhận lương
                                 </label>
                               )}
-                              <div className="min-w-0 flex-1 text-sm">
-                                <p className="text-xs text-gray-500">Số tiền chuyển</p>
-                                <p className="font-bold text-gray-900 tabular-nums">{amountVnd.toLocaleString('vi-VN')} đ</p>
-                                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
-                                  <button
-                                    onClick={() => navigator.clipboard?.writeText(String(amountVnd)).then(() => alert(`Đã sao chép số tiền: ${amountVnd}`))}
-                                    className="text-blue-600 hover:underline">Sao chép số tiền</button>
-                                  {qr && <label htmlFor={inputId} className="text-blue-600 hover:underline cursor-pointer">Đổi ảnh QR</label>}
-                                  {qr && (
-                                    <button onClick={() => { if (window.confirm(`Xóa ảnh QR của ${emp.name}?`)) saveSalaryQR(emp.id, null); }}
-                                      className="text-red-500 hover:underline">Xóa QR</button>
-                                  )}
-                                </div>
+                              <p className="text-xs text-gray-500 mt-3">Số tiền chuyển</p>
+                              <p className="text-xl font-bold text-gray-900 tabular-nums">{amountVnd.toLocaleString('vi-VN')} đ</p>
+                              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 mt-1.5 text-xs">
+                                <button
+                                  onClick={() => navigator.clipboard?.writeText(String(amountVnd)).then(() => alert(`Đã sao chép số tiền: ${amountVnd}`))}
+                                  className="text-blue-600 hover:underline">Sao chép số tiền</button>
+                                {qr && <label htmlFor={inputId} className="text-blue-600 hover:underline cursor-pointer">Đổi ảnh QR</label>}
+                                {qr && (
+                                  <button onClick={() => { if (window.confirm(`Xóa ảnh QR của ${emp.name}?`)) saveSalaryQR(emp.id, null); }}
+                                    className="text-red-500 hover:underline">Xóa QR</button>
+                                )}
                               </div>
                             </div>
                           );
@@ -2230,10 +2228,10 @@ export default function TaskDashboard() {
           {/* Phóng to ảnh QR nhận lương */}
           {qrPreview && (
             <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4" onClick={() => setQrPreview(null)}>
-              <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm text-center" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-lg text-center" onClick={(e) => e.stopPropagation()}>
                 <p className="font-bold text-gray-900">{qrPreview.name}</p>
                 <p className="text-sm text-gray-600 mb-3">Chuyển: <b className="text-emerald-700">{qrPreview.amount.toLocaleString('vi-VN')} đ</b></p>
-                <img src={qrPreview.src} alt="QR" className="w-full max-h-[65vh] object-contain rounded-lg border border-gray-100" />
+                <img src={qrPreview.src} alt="QR" className="w-full max-h-[78vh] object-contain rounded-lg border border-gray-100" />
                 <button onClick={() => setQrPreview(null)} className="mt-4 w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300">Đóng</button>
               </div>
             </div>

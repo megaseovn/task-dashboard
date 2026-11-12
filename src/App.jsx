@@ -175,7 +175,8 @@ export default function TaskDashboard() {
   const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
   const [expandedAttendance, setExpandedAttendance] = useState({});
   const [dayPicker, setDayPicker] = useState(null); // { userId, name, date, current }
-  const [qrPreview, setQrPreview] = useState(null); // { name, src, amount }
+  const [qrPreview, setQrPreview] = useState(null);
+  const [statsList, setStatsList] = useState(null); // 'total' | 'done' | 'inProgress' | 'overdue' // { name, src, amount }
   const [historyTask, setHistoryTask] = useState(null); // task đang xem lịch sử thêm/sửa
   const [cardPanel, setCardPanel] = useState({}); // thẻ task nhân viên: { '<id>:links' | '<id>:comments': true }
 
@@ -1271,7 +1272,7 @@ export default function TaskDashboard() {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-        <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+        <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
               📊 Manager Panel
@@ -2467,7 +2468,7 @@ export default function TaskDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+      <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
           <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-600 to-emerald-600 bg-clip-text text-transparent">
             📊 My Tasks
@@ -2509,25 +2510,74 @@ export default function TaskDashboard() {
           </div>
         )}
 
-        {/* Stats */}
+        {/* Stats: bấm vào để xem danh sách task */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl p-3 text-white shadow-lg">
-            <p className="text-white/80 text-xs mb-1">Tổng</p>
-            <p className="text-2xl font-bold">{stats.total}</p>
-          </div>
-          <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl p-3 text-white shadow-lg">
-            <p className="text-white/80 text-xs mb-1">Hoàn thành</p>
-            <p className="text-2xl font-bold">{stats.done}</p>
-          </div>
-          <div className="bg-gradient-to-br from-amber-400 to-amber-600 rounded-xl p-3 text-white shadow-lg">
-            <p className="text-white/80 text-xs mb-1">Đang làm</p>
-            <p className="text-2xl font-bold">{stats.inProgress}</p>
-          </div>
-          <div className="bg-gradient-to-br from-rose-400 to-rose-600 rounded-xl p-3 text-white shadow-lg">
-            <p className="text-white/80 text-xs mb-1">Quá hạn</p>
-            <p className="text-2xl font-bold">{stats.overdue}</p>
-          </div>
+          {[
+            ['total', 'Tổng', stats.total, 'from-blue-400 to-blue-600'],
+            ['done', 'Hoàn thành', stats.done, 'from-emerald-400 to-emerald-600'],
+            ['inProgress', 'Đang làm', stats.inProgress, 'from-amber-400 to-amber-600'],
+            ['overdue', 'Quá hạn', stats.overdue, 'from-rose-400 to-rose-600'],
+          ].map(([key, label, value, grad]) => (
+            <button key={key} onClick={() => setStatsList(key)} title="Bấm để xem danh sách task"
+              className={`text-left bg-gradient-to-br ${grad} rounded-xl p-3 text-white shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all`}>
+              <p className="text-white/80 text-xs mb-1 flex justify-between">{label}<span className="opacity-70">Xem ›</span></p>
+              <p className="text-2xl font-bold">{value}</p>
+            </button>
+          ))}
         </div>
+
+        {/* Danh sách task theo ô số liệu */}
+        {statsList && (() => {
+          const mine = tasks.filter(t => t.assignee === currentUser.id || t.createdBy === currentUser.id);
+          const cfg = {
+            total: ['Tất cả task', mine, -1],
+            done: ['Task đã hoàn thành', mine.filter(t => t.status === 'Hoàn thành'), -1],
+            inProgress: ['Task đang làm', mine.filter(t => t.status === 'Đang làm'), 1],
+            overdue: ['Task quá hạn', mine.filter(t => isOverdue(t.deadline, t.status)), 1],
+          }[statsList];
+          const [title, list0, dir] = cfg;
+          const list = [...list0].sort((a, b) => ((a.deadline || '') < (b.deadline || '') ? -1 : 1) * dir);
+          const LIMIT = 200;
+          const ddmmyy = (d) => d ? d.split('-').reverse().join('/') : '–';
+          return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4" onClick={() => setStatsList(null)}>
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <h3 className="font-bold text-gray-900">{title} <span className="text-gray-500 font-normal">({list.length})</span></h3>
+                  <button onClick={() => setStatsList(null)} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="overflow-y-auto divide-y divide-gray-100">
+                  {list.length === 0 && <p className="px-5 py-10 text-center text-gray-400">Không có task nào 🎉</p>}
+                  {list.slice(0, LIMIT).map(task => {
+                    const overdue = isOverdue(task.deadline, task.status);
+                    return (
+                      <div key={task.id} className={`px-5 py-2.5 flex items-center gap-3 ${overdue ? 'bg-red-50/60' : ''}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 text-sm truncate">{task.title}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {task.project} · {task.type} · <span className={overdue ? 'text-red-600 font-semibold' : ''}>Hạn {ddmmyy(task.deadline)}</span>
+                          </p>
+                        </div>
+                        <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${statusColorMap[task.status] || 'bg-gray-100 text-gray-700'}`}>{task.status}</span>
+                        {task.status !== 'Hoàn thành' && (
+                          <button onClick={() => handleQuickComplete(task.id)}
+                            className="shrink-0 h-7 px-2.5 rounded-md bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 flex items-center gap-1">
+                            <CheckCircle className="w-3.5 h-3.5" /> Xong
+                          </button>
+                        )}
+                        <button onClick={() => { setStatsList(null); handleOpenEditTask(task); }} title="Sửa task"
+                          className="shrink-0 h-7 w-7 inline-flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {list.length > LIMIT && <p className="px-5 py-3 text-center text-xs text-gray-500">Đang hiện {LIMIT} task gần nhất trên tổng {list.length}.</p>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Attendance Quick Checkin */}
         <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">

@@ -26,6 +26,7 @@ import {
   saveAttendancesChangesSafely,
   toArray,
   saveSalaryField,
+  saveSalaryQR,
   listenToSalariesChanges,
   setAllowedEmail,
   createAuthAccount,
@@ -51,6 +52,27 @@ const diffById = (prev, next) => {
   const deleteIds = prev.filter(x => !nextIds.has(x.id)).map(x => x.id);
   return { upserts, deleteIds };
 };
+
+// Thu nhỏ ảnh QR trước khi lưu (cạnh dài tối đa 600px) để database nhẹ
+const resizeImageToDataUrl = (file, max = 600) => new Promise((resolve, reject) => {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    resolve(c.toDataURL('image/jpeg', 0.92));
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Không đọc được ảnh')); };
+  img.src = url;
+});
 
 // Ô nhập lương: giữ số đang gõ, chỉ lưu khi rời ô hoặc nhấn Enter.
 // overridden = manager đã sửa (nền xanh, có nút ↺ để quay về số tự tính)
@@ -153,6 +175,7 @@ export default function TaskDashboard() {
   const [showAllFilterEmployees, setShowAllFilterEmployees] = useState(false);
   const [expandedAttendance, setExpandedAttendance] = useState({});
   const [dayPicker, setDayPicker] = useState(null); // { userId, name, date, current }
+  const [qrPreview, setQrPreview] = useState(null); // { name, src, amount }
   const [historyTask, setHistoryTask] = useState(null); // task đang xem lịch sử thêm/sửa
   const [cardPanel, setCardPanel] = useState({}); // thẻ task nhân viên: { '<id>:links' | '<id>:comments': true }
 
@@ -622,7 +645,7 @@ export default function TaskDashboard() {
 
   // Lương cứng / BHXH: tháng này chưa nhập thì lấy số của tháng gần nhất trước đó
   const getCarriedValue = (empId, month, field) => {
-    const prevMonths = Object.keys(salaries).filter(k => k < month).sort().reverse();
+    const prevMonths = Object.keys(salaries).filter(k => /^\d{4}-\d{2}$/.test(k) && k < month).sort().reverse();
     for (const k of prevMonths) {
       const v = salaries[k]?.[empId]?.[field];
       if (v !== undefined && v !== null) return v;
@@ -2147,6 +2170,55 @@ export default function TaskDashboard() {
                             <span className="w-3" />
                           </div>
                         </div>
+
+                        {/* QR nhận lương */}
+                        {(() => {
+                          const qr = salaries?.qr?.[emp.id];
+                          const amountVnd = Math.max(0, Math.round(r.total * 1000));
+                          const inputId = `qr-${emp.id}`;
+                          const onPick = async (e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file) return;
+                            if (!file.type.startsWith('image/')) { alert('Vui lòng chọn file ảnh.'); return; }
+                            try {
+                              const dataUrl = await resizeImageToDataUrl(file);
+                              const ok = await saveSalaryQR(emp.id, dataUrl);
+                              if (!ok) alert('Không lưu được ảnh QR. Thử lại sau.');
+                            } catch (err) { alert(err.message); }
+                          };
+                          return (
+                            <div className="px-4 py-3 border-t border-gray-200 flex items-center gap-3">
+                              <input id={inputId} type="file" accept="image/*" className="hidden" onChange={onPick} />
+                              {qr ? (
+                                <button onClick={() => setQrPreview({ name: emp.name, src: qr, amount: amountVnd })} title="Bấm để phóng to"
+                                  className="shrink-0 w-24 h-24 rounded-lg border border-gray-200 bg-white p-1 hover:ring-2 hover:ring-blue-400">
+                                  <img src={qr} alt={`QR ${emp.name}`} className="w-full h-full object-contain" />
+                                </button>
+                              ) : (
+                                <label htmlFor={inputId}
+                                  className="shrink-0 w-24 h-24 rounded-lg border-2 border-dashed border-gray-300 text-gray-400 hover:border-blue-400 hover:text-blue-600 flex flex-col items-center justify-center text-xs cursor-pointer">
+                                  <Plus className="w-5 h-5" />
+                                  Thêm QR
+                                </label>
+                              )}
+                              <div className="min-w-0 flex-1 text-sm">
+                                <p className="text-xs text-gray-500">Số tiền chuyển</p>
+                                <p className="font-bold text-gray-900 tabular-nums">{amountVnd.toLocaleString('vi-VN')} đ</p>
+                                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs">
+                                  <button
+                                    onClick={() => navigator.clipboard?.writeText(String(amountVnd)).then(() => alert(`Đã sao chép số tiền: ${amountVnd}`))}
+                                    className="text-blue-600 hover:underline">Sao chép số tiền</button>
+                                  {qr && <label htmlFor={inputId} className="text-blue-600 hover:underline cursor-pointer">Đổi ảnh QR</label>}
+                                  {qr && (
+                                    <button onClick={() => { if (window.confirm(`Xóa ảnh QR của ${emp.name}?`)) saveSalaryQR(emp.id, null); }}
+                                      className="text-red-500 hover:underline">Xóa QR</button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
@@ -2154,6 +2226,18 @@ export default function TaskDashboard() {
               </div>
             );
           })()}
+
+          {/* Phóng to ảnh QR nhận lương */}
+          {qrPreview && (
+            <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[60] p-4" onClick={() => setQrPreview(null)}>
+              <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm text-center" onClick={(e) => e.stopPropagation()}>
+                <p className="font-bold text-gray-900">{qrPreview.name}</p>
+                <p className="text-sm text-gray-600 mb-3">Chuyển: <b className="text-emerald-700">{qrPreview.amount.toLocaleString('vi-VN')} đ</b></p>
+                <img src={qrPreview.src} alt="QR" className="w-full max-h-[65vh] object-contain rounded-lg border border-gray-100" />
+                <button onClick={() => setQrPreview(null)} className="mt-4 w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300">Đóng</button>
+              </div>
+            </div>
+          )}
 
           {/* Lịch sử thêm/sửa task không đúng ngày (manager) */}
           {historyTask && (() => {

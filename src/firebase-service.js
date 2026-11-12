@@ -350,3 +350,14 @@ export const fetchEmployeesOnce = async () => {
 };
 
 export { auth };
+
+// Ảnh QR nhận lương của từng nhân viên (lưu trong nhánh salaries -> chỉ manager xem được)
+export const saveSalaryQR = async (employeeId, dataUrl) => {
+  try {
+    await dbSet(dbRef(db, `salaries/qr/${employeeId}`), dataUrl || null);
+    return true;
+  } catch (error) {
+    console.error('Error saving QR:', error);
+    return false;
+  }
+};
